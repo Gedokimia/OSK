@@ -684,6 +684,9 @@ else
 KBUILD_CFLAGS   += -O2
 endif
 
+# Enable fast FMA optimizations
+KBUILD_CFLAGS += $(call cc-option,-ffp-contract=fast)
+
 # Tell gcc to never replace conditional load with a non-conditional one
 KBUILD_CFLAGS	+= $(call cc-option,--param=allow-store-data-races=0)
 KBUILD_CFLAGS	+= $(call cc-option,-fno-allow-store-data-races)
