@@ -1143,8 +1143,8 @@ static inline void __count_memcg_events(struct mem_cgroup *memcg,
 }
 
 static inline void count_memcg_events(struct mem_cgroup *memcg,
-				      enum vm_event_item idx,
-				      unsigned long count)
+                                      enum vm_event_item idx,
+                                      unsigned long count)
 {
 }
 
