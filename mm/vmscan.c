@@ -4436,6 +4436,15 @@ static int evict_pages(unsigned long nr_to_scan, struct lruvec *lruvec, struct s
 	mem_cgroup_uncharge_list(&list);
 	free_unref_page_list(&list);
 
+	sc->nr.dirty += stat.nr_dirty;
+	sc->nr.congested += stat.nr_congested;
+	sc->nr.unqueued_dirty += stat.nr_unqueued_dirty;
+	sc->nr.writeback += stat.nr_writeback;
+	sc->nr.immediate += stat.nr_immediate;
+	sc->nr.taken += isolated;
+	if (type == LRU_GEN_FILE)
+		sc->nr.file_taken += isolated;
+
 	sc->nr_reclaimed += reclaimed;
 	if (!reclaimed) {
 		item = current_is_kswapd() ? LRU_KSWAPD_ANON : LRU_DIRECT_ANON;
@@ -4492,6 +4501,7 @@ static void lru_gen_shrink_lruvec(struct lruvec *lruvec, struct scan_control *sc
 	while (scanned < nr_to_scan) {
 		int delta;
 		unsigned long nr_batch;
+		unsigned long nr_reclaimed = sc->nr_reclaimed;
 		DEFINE_MAX_SEQ(lruvec);
 
 		if (should_run_aging(lruvec, max_seq, swappiness, &nr_batch)) {
@@ -4526,15 +4536,12 @@ static void lru_gen_shrink_lruvec(struct lruvec *lruvec, struct scan_control *sc
 		if (sc->nr_reclaimed - reclaimed >= sc->nr_to_reclaim)
 			break;
 
+		/* if we're not making any progress, stop to avoid freeze */
+		if (sc->nr_reclaimed == nr_reclaimed)
+			break;
+
 		cond_resched();
 	}
-
-	/*
-	 * If too many file cache in the coldest generation can't be evicted
-	 * due to being dirty, wake up the flusher.
-	 */
-	if (sc->nr.unqueued_dirty && sc->nr.unqueued_dirty == sc->nr.file_taken)
-		wakeup_flusher_threads(WB_REASON_VMSCAN);
 
 done:
 	if (current_is_kswapd())
@@ -6285,9 +6292,6 @@ static int balance_pgdat(pg_data_t *pgdat, int order, int classzone_idx)
 		.may_writepage = !laptop_mode,
 		.may_unmap = 1,
 		.may_swap = 1,
-#ifdef CONFIG_LRU_GEN
-		.memcgs_need_aging = 1,
-#endif
 	};
 
 	psi_memstall_enter(&pflags);
