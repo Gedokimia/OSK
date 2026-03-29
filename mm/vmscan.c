@@ -3796,14 +3796,41 @@ done:
 	return success;
 }
 
-static long get_nr_evictable(struct lruvec *lruvec, unsigned long max_seq,
-			     unsigned long *min_seq, bool can_swap, bool *need_aging)
+static long lruvec_evictable_size(struct lruvec *lruvec, bool can_swap)
+{
+	int gen, type, zone;
+	long total = 0;
+	struct lru_gen_struct *lrugen = &lruvec->lrugen;
+	DEFINE_MAX_SEQ(lruvec);
+	DEFINE_MIN_SEQ(lruvec);
+
+	for (type = !can_swap; type < ANON_AND_FILE; type++) {
+		unsigned long seq;
+
+		for (seq = min_seq[type]; seq <= max_seq; seq++) {
+			gen = lru_gen_from_seq(seq);
+
+			for (zone = 0; zone < MAX_NR_ZONES; zone++)
+				total += max(READ_ONCE(lrugen->nr_pages[gen][type][zone]), 0L);
+		}
+	}
+
+	return total;
+}
+
+static bool should_run_aging(struct lruvec *lruvec, unsigned long max_seq,
+			     bool can_swap, unsigned long *nr_to_scan)
 {
 	int gen, type, zone;
 	long old = 0;
 	long young = 0;
 	long total = 0;
 	struct lru_gen_struct *lrugen = &lruvec->lrugen;
+	DEFINE_MIN_SEQ(lruvec);
+
+	/* have to run aging, since eviction is not possible anymore */
+	if (min_seq[!can_swap] + MIN_NR_GENS > max_seq)
+		return true;
 
 	for (type = !can_swap; type < ANON_AND_FILE; type++) {
 		unsigned long seq;
@@ -3814,7 +3841,7 @@ static long get_nr_evictable(struct lruvec *lruvec, unsigned long max_seq,
 			gen = lru_gen_from_seq(seq);
 
 			for (zone = 0; zone < MAX_NR_ZONES; zone++)
-				size += READ_ONCE(lrugen->nr_pages[gen][type][zone]);
+				size += max(READ_ONCE(lrugen->nr_pages[gen][type][zone]), 0L);
 
 			total += size;
 			if (seq == max_seq)
@@ -3823,6 +3850,8 @@ static long get_nr_evictable(struct lruvec *lruvec, unsigned long max_seq,
 				old += size;
 		}
 	}
+
+	*nr_to_scan = total;
 
 	/*
 	 * The aging and the eviction is a typical producer-consumer model. The
@@ -3839,18 +3868,26 @@ static long get_nr_evictable(struct lruvec *lruvec, unsigned long max_seq,
 	 * from the producer's POV, the aging only cares about the upper bound
 	 * of hot pages, i.e., 1/MIN_NR_GENS.
 	 */
-	if (min_seq[!can_swap] + MIN_NR_GENS > max_seq)
-		*need_aging = true;
-	else if (min_seq[!can_swap] + MIN_NR_GENS < max_seq)
-		*need_aging = false;
-	else if (young * MIN_NR_GENS > total)
-		*need_aging = true;
-	else if (old * (MIN_NR_GENS + 2) < total)
-		*need_aging = true;
-	else
-		*need_aging = false;
+	if (min_seq[!can_swap] + MIN_NR_GENS < max_seq)
+		return false;
 
-	return total > 0 ? total : 0;
+	if (young * MIN_NR_GENS > total)
+		return true;
+
+	if (old * (MIN_NR_GENS + 2) < total)
+		return true;
+
+	return false;
+}
+
+static long get_nr_evictable(struct lruvec *lruvec, unsigned long max_seq,
+			     unsigned long *min_seq, bool can_swap, bool *need_aging)
+{
+	unsigned long nr_to_scan;
+
+	*need_aging = should_run_aging(lruvec, max_seq, can_swap, &nr_to_scan);
+
+	return nr_to_scan;
 }
 
 static bool age_lruvec(struct lruvec *lruvec, struct scan_control *sc,
@@ -4411,101 +4448,94 @@ static int evict_pages(unsigned long nr_to_scan, struct lruvec *lruvec, struct s
 	return scanned;
 }
 
-static long get_nr_to_scan(struct lruvec *lruvec, struct scan_control *sc, bool can_swap,
-		unsigned long reclaimed, bool *need_aging)
+static long get_nr_to_scan(struct lruvec *lruvec, struct scan_control *sc, bool can_swap)
 {
-	int priority;
-	long nr_to_scan;
+	unsigned long nr_to_scan;
 	struct mem_cgroup *memcg = lruvec_memcg(lruvec);
-	DEFINE_MAX_SEQ(lruvec);
-	DEFINE_MIN_SEQ(lruvec);
 
-	nr_to_scan = get_nr_evictable(lruvec, max_seq, min_seq, can_swap, need_aging);
-	if (!nr_to_scan)
-		return 0;
+	nr_to_scan = lruvec_evictable_size(lruvec, can_swap);
 
-
+	/* try to scrape all its memory if this memcg was deleted */
 	if (!mem_cgroup_online(memcg))
-		priority = 0;
-	else if (sc->nr_reclaimed - reclaimed >= sc->nr_to_reclaim)
-		priority = DEF_PRIORITY;
-	else
-		priority = sc->priority;
-
-	nr_to_scan >>= priority;
-	if (!nr_to_scan)
-		return 0;
-
-	if (!*need_aging)
 		return nr_to_scan;
 
-	/* skip the aging path at the default priority */
-	if (priority == DEF_PRIORITY)
-		return nr_to_scan;
-
-	/* leave the work to lru_gen_age_node() */
-	if (current_is_kswapd())
-		return 0;
-
-	if (try_to_inc_max_seq(lruvec, max_seq, sc, can_swap, false))
-		return nr_to_scan;
-
-	return min_seq[!can_swap] + MIN_NR_GENS <= max_seq ? nr_to_scan : 0;
+	/* always respect scan priority */
+	return nr_to_scan >> sc->priority;
 }
 
 static void lru_gen_shrink_lruvec(struct lruvec *lruvec, struct scan_control *sc)
 {
 	struct blk_plug plug;
 	long scanned = 0;
-	bool need_aging = false;
 	bool swapped = false;
 	unsigned long reclaimed = sc->nr_reclaimed;
 	struct pglist_data *pgdat = lruvec_pgdat(lruvec);
+	int swappiness;
+	long nr_to_scan;
+
+	if (sc->may_swap)
+		swappiness = get_swappiness(lruvec, sc);
+	else if (global_reclaim(sc) && get_swappiness(lruvec, sc))
+		swappiness = 1;
+	else
+		swappiness = 0;
+
+	nr_to_scan = get_nr_to_scan(lruvec, sc, swappiness);
+	if (!nr_to_scan)
+		return;
 
 	blk_start_plug(&plug);
 
 	if (current_is_kswapd())
 		current->reclaim_state->mm_walk = &pgdat->mm_walk;
 
-	while (true) {
+	while (scanned < nr_to_scan) {
 		int delta;
-		int swappiness;
-		long nr_to_scan;
-		long nr_batch;
+		unsigned long nr_batch;
+		DEFINE_MAX_SEQ(lruvec);
 
-		if (sc->may_swap)
-			swappiness = get_swappiness(lruvec, sc);
-		else if (global_reclaim(sc) && get_swappiness(lruvec, sc))
-			swappiness = 1;
-		else
-			swappiness = 0;
-
-		nr_to_scan = get_nr_to_scan(lruvec, sc, swappiness, reclaimed, &need_aging);
-		if (!nr_to_scan)
-			goto done;
+		if (should_run_aging(lruvec, max_seq, swappiness, &nr_batch)) {
+			if (current_is_kswapd()) {
+				/* kswapd does its own aging */
+				if (sc->priority == DEF_PRIORITY)
+					break;
+			} else if (sc->priority < DEF_PRIORITY &&
+				   try_to_inc_max_seq(lruvec, max_seq, sc, swappiness, false)) {
+				scanned += nr_batch;
+			}
+			/* don't abort immediately right after aging */
+		}
 
 		nr_batch = min_t(unsigned long, nr_to_scan - scanned, MIN_LRU_BATCH);
 		if (nr_batch <= 0)
 			break;
 
 		delta = evict_pages(nr_batch, lruvec, sc, swappiness, &swapped);
-		if (!delta)
+		if (!delta) {
+			/* help kswapd to sleep by avoiding hopeless scanning */
+			if (current_is_kswapd())
+				break;
 			goto done;
-
-		if (sc->memcgs_avoid_swapping && swappiness < 200 && swapped)
-			break;
+		}
 
 		scanned += delta;
 		if (scanned >= nr_to_scan)
 			break;
 
+		/* if we've reclaimed enough, we can stop */
+		if (sc->nr_reclaimed - reclaimed >= sc->nr_to_reclaim)
+			break;
+
 		cond_resched();
 	}
 
-	if (!need_aging)
-		sc->memcgs_need_aging = false;
-	if (!swapped)
-		sc->memcgs_need_swapping = false;
+	/*
+	 * If too many file cache in the coldest generation can't be evicted
+	 * due to being dirty, wake up the flusher.
+	 */
+	if (sc->nr.unqueued_dirty && sc->nr.unqueued_dirty == sc->nr.file_taken)
+		wakeup_flusher_threads(WB_REASON_VMSCAN);
+
 done:
 	if (current_is_kswapd())
 		current->reclaim_state->mm_walk = NULL;
@@ -6255,6 +6285,9 @@ static int balance_pgdat(pg_data_t *pgdat, int order, int classzone_idx)
 		.may_writepage = !laptop_mode,
 		.may_unmap = 1,
 		.may_swap = 1,
+#ifdef CONFIG_LRU_GEN
+		.memcgs_need_aging = 1,
+#endif
 	};
 
 	psi_memstall_enter(&pflags);
