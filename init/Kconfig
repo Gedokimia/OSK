@@ -315,7 +315,7 @@ config POSIX_MQUEUE_SYSCTL
 config CROSS_MEMORY_ATTACH
 	bool "Enable process_vm_readv/writev syscalls"
 	depends on MMU
-	default y
+	default n
 	help
 	  Enabling this option adds the system calls process_vm_readv and
 	  process_vm_writev which allow a process with the correct privileges
@@ -487,6 +487,7 @@ config TASK_DELAY_ACCT
 config TASK_XACCT
 	bool "Enable extended accounting over taskstats"
 	depends on TASKSTATS
+	default n
 	help
 	  Collect extended task accounting data and send the data
 	  to userland for processing over the taskstats interface.
@@ -1234,13 +1235,13 @@ config CC_OPTIMIZE_FOR_PERFORMANCE
 	bool "Optimize for performance"
 	help
 	  This is the default optimization level for the kernel, building
-	  with the "-O2" compiler flag for best performance and most
+	  with the "-O3" compiler flag for best performance and most
 	  helpful compile-time warnings.
 
 config CC_OPTIMIZE_FOR_SIZE
 	bool "Optimize for size"
 	help
-	  Enabling this option will pass "-Os" instead of "-O2" to
+	  Enabling this option will pass "-Os" instead of "-O3" to
 	  your compiler resulting in a smaller kernel.
 
 	  If unsure, say N.
@@ -1378,9 +1379,9 @@ config SYSCTL_SYSCALL
 	  If unsure say N here.
 
 config FHANDLE
+	default n
 	bool "open by fhandle syscalls" if EXPERT
 	select EXPORTFS
-	default y
 	help
 	  If you say Y here, a user level program will be able to map
 	  file names to handle and then later use the handle for
@@ -1435,7 +1436,7 @@ config BUG
 
 config ELF_CORE
 	depends on COREDUMP
-	default y
+	default n
 	bool "Enable ELF core dumps" if EXPERT
 	help
 	  Enable support for generating core dumps. Disabling saves about 4k.
@@ -1660,6 +1661,7 @@ config BPF_JIT_DEFAULT_ON
 source "kernel/bpf/preload/Kconfig"
 
 config USERFAULTFD
+	default n
 	bool "Enable userfaultfd() system call"
 	depends on MMU
 	help
@@ -1936,6 +1938,7 @@ config SYSTEM_DATA_VERIFICATION
 	  verification.
 
 config PROFILING
+	default n
 	bool "Profiling support"
 	help
 	  Say Y here to enable the extended profiling support mechanisms used
@@ -2135,7 +2138,7 @@ config MODULE_COMPRESS
 choice
 	prompt "Compression algorithm"
 	depends on MODULE_COMPRESS
-	default MODULE_COMPRESS_GZIP
+	default MODULE_COMPRESS_XZ
 	help
 	  This determines which sort of compression will be used during
 	  'make modules_install'.
