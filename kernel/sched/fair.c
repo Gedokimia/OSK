@@ -137,7 +137,7 @@ unsigned int sysctl_sched_cfs_bandwidth_slice		= 5000UL;
  *
  * (default: ~20%)
  */
-unsigned int capacity_margin				= 1280;
+unsigned int capacity_margin				= 1150;
 
 static inline void update_load_add(struct load_weight *lw, unsigned long inc)
 {
@@ -3839,7 +3839,7 @@ util_est_dequeue(struct cfs_rq *cfs_rq, struct task_struct *p, bool task_sleep)
 	 * already ~1% close to its last activation value.
 	 */
 	last_ewma_diff = ue.enqueued - ue.ewma;
-	if (within_margin(last_ewma_diff, (SCHED_CAPACITY_SCALE / 100)))
+	if (within_margin(last_ewma_diff, (SCHED_CAPACITY_SCALE / 32)))
 		return;
 
 	/*
@@ -5287,7 +5287,7 @@ static inline unsigned long cpu_util(int cpu);
 static unsigned long capacity_of(int cpu);
 
 #ifdef CONFIG_MTK_SCHED_EXTENSION
-#define fits_capacity(cap, max) ((cap) * 1280 < (max) * 1024)
+#define fits_capacity(cap, max) ((cap) * 1150 < (max) * 1024)
 
 static struct perf_domain *find_pd(struct perf_domain *pd, int cpu)
 {
