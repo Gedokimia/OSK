@@ -563,8 +563,13 @@ int disp_init_irq(void)
 	init_waitqueue_head(&disp_irq_log_wq);
 	disp_irq_log_task = kthread_create(disp_irq_log_kthread_func,
 		NULL, "ddp_irq_log_kthread");
-	if (IS_ERR(disp_irq_log_task))
+	if (IS_ERR(disp_irq_log_task)) {
 		DDPERR(" can not create disp_irq_log_task kthread\n");
+	} else {
+                struct cpumask big; cpumask_clear(&big);
+                cpumask_set_cpu(6, &big); cpumask_set_cpu(7, &big);
+                set_cpus_allowed_ptr(disp_irq_log_task, &big);
+        }
 
 	/* wake_up_process(disp_irq_log_task); */
 	return 0;

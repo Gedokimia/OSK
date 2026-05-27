@@ -4125,6 +4125,11 @@ int primary_display_init(char *lcm_name, unsigned int lcm_fps,
 
 	/* Part5: Top sw init */
 	primary_display_check_recovery_init();
+	/* KernelBumi: big core mask for latency-critical display threads */
+	struct cpumask kernelbumi_big;
+	cpumask_clear(&kernelbumi_big);
+	cpumask_set_cpu(6, &kernelbumi_big);
+	cpumask_set_cpu(7, &kernelbumi_big);
 
 	if (disp_helper_get_option(DISP_OPT_SWITCH_DST_MODE)) {
 		primary_display_switch_dst_mode_task =
@@ -4147,6 +4152,7 @@ int primary_display_init(char *lcm_name, unsigned int lcm_fps,
 			kthread_create(decouple_trigger_worker_thread,
 				NULL, "decouple_trigger");
 		wake_up_process(decouple_trigger_thread);
+		set_cpus_allowed_ptr(decouple_trigger_thread, &kernelbumi_big);
 	}
 
 	if (disp_helper_get_stage() == DISP_HELPER_STAGE_NORMAL) {
@@ -4154,6 +4160,7 @@ int primary_display_init(char *lcm_name, unsigned int lcm_fps,
 			kthread_create(_disp_primary_path_check_trigger,
 				NULL, "display_check_aal");
 		wake_up_process(primary_path_aal_task);
+		set_cpus_allowed_ptr(primary_path_aal_task, &kernelbumi_big);
 	}
 
 	if (disp_helper_get_stage() == DISP_HELPER_STAGE_NORMAL) {
@@ -4178,6 +4185,7 @@ int primary_display_init(char *lcm_name, unsigned int lcm_fps,
 			kthread_create(_present_fence_release_worker_thread,
 				NULL, "present_fence_worker");
 		wake_up_process(present_fence_release_worker_task);
+		set_cpus_allowed_ptr(present_fence_release_worker_task, &kernelbumi_big);
 		pf_thread_init = true;
 	}
 #endif

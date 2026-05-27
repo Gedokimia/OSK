@@ -136,7 +136,7 @@ static int g_VsyncOffsetLevel;
 static int g_probe_pid = GED_NO_UM_SERVICE;
 
 #ifdef GED_CONFIGURE_LOADING_BASE_DVFS_STEP
-#define DEFAULT_DVFS_STEP_MODE	0x0000 /* dvfs step =0, enlarge range= 0 */
+#define DEFAULT_DVFS_STEP_MODE	0x0001 /* dvfs step =0, enlarge range= 0 */
 unsigned int dvfs_step_mode = DEFAULT_DVFS_STEP_MODE;
 static int init;
 #endif
@@ -185,12 +185,12 @@ struct GpuUtilization_Ex g_Util_Ex;
 static int ged_get_dvfs_loading_mode(void);
 #endif
 
-#define GED_DVFS_TIMER_BASED_DVFS_MARGIN 30
+#define GED_DVFS_TIMER_BASED_DVFS_MARGIN 10
 static int gx_tb_dvfs_margin = GED_DVFS_TIMER_BASED_DVFS_MARGIN;
 static int gx_tb_dvfs_margin_cur = GED_DVFS_TIMER_BASED_DVFS_MARGIN;
 #ifdef GED_ENABLE_TIMER_BASED_DVFS_MARGIN
 #define MAX_TB_DVFS_MARGIN               99
-#define MIN_TB_DVFS_MARGIN               10
+#define MIN_TB_DVFS_MARGIN               5
 #define MIN_TB_MARGIN_INC_STEP           1
 #define CONFIGURE_TIMER_BASED_MODE       0x00000000
 #define DYNAMIC_TB_MASK                  0x00000100
@@ -948,7 +948,7 @@ int gx_fb_dvfs_margin = DEFAULT_DVFS_MARGIN;/* 10-bias */
 /* variable margin mode OPP Iidx */
 #define VARIABLE_MARGIN_MODE_OPP_INDEX 0x01
 
-#define MIN_MARGIN_INC_STEP 1 /* 1% headroom */
+#define MIN_MARGIN_INC_STEP 5 /* 1% headroom */
 
 static int dvfs_margin_value = DEFAULT_DVFS_MARGIN/10;
 unsigned int dvfs_margin_mode = CONFIGURE_MARGIN_MODE;
