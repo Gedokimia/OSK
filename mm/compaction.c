@@ -1166,6 +1166,56 @@ static void isolate_freepages(struct compact_control *cc)
  * This is a migrate-callback that "allocates" freepages by taking pages
  * from the isolated freelists in the block we are migrating to.
  */
+
+/*
+ * Proactive compaction: kcompactd wakes periodically and tries to compact
+ * memory proactively. sysctl vm.compaction_proactiveness (0-100) controls
+ * aggressiveness. 0 = disabled, 100 = always compact.
+ */
+int sysctl_compaction_proactiveness = 20;
+
+/*
+ * fragmentation_score_zone - returns a zone's external fragmentation score
+ * as a value in [0, 1000].  We abuse extfrag_index output (also 0-1000)
+ * for a representative high-order page (order-9, i.e. 2MB on 4K pages).
+ */
+static unsigned int fragmentation_score_zone(struct zone *zone)
+{
+	unsigned int score = 0;
+	int order;
+	unsigned int nr_free;
+	unsigned long total_free = zone_page_state(zone, NR_FREE_PAGES);
+
+	if (!total_free)
+		return 0;
+
+	for (order = 0; order < MAX_ORDER - 1; order++) {
+		nr_free = zone->free_area[order].nr_free;
+		/* small orders contribute negatively to fragmentation */
+		if (order < PAGE_ALLOC_COSTLY_ORDER)
+			score += nr_free << order;
+	}
+
+	/* Normalize: fragmentation = fraction of free pages in small orders */
+	score = min(score * 1000 / (total_free + 1), 1000U);
+	return score;
+}
+
+static unsigned int fragmentation_score_node(pg_data_t *pgdat)
+{
+	unsigned int score = 0;
+	int i;
+
+	for (i = 0; i < pgdat->nr_zones; i++) {
+		struct zone *zone = pgdat->node_zones + i;
+
+		if (!populated_zone(zone))
+			continue;
+		score = max(score, fragmentation_score_zone(zone));
+	}
+	return score;
+}
+
 static struct page *compaction_alloc(struct page *migratepage,
 					unsigned long data)
 {
@@ -2043,6 +2093,7 @@ static int kcompactd(void *p)
 {
 	pg_data_t *pgdat = (pg_data_t*)p;
 	struct task_struct *tsk = current;
+	unsigned int proactive_defer = 0;
 
 	const struct cpumask *cpumask = cpumask_of_node(pgdat->node_id);
 
@@ -2056,13 +2107,59 @@ static int kcompactd(void *p)
 
 	while (!kthread_should_stop()) {
 		unsigned long pflags;
+		unsigned int score, wakeup_jiffies;
 
 		trace_mm_compaction_kcompactd_sleep(pgdat->node_id);
-		wait_event_freezable(pgdat->kcompactd_wait,
-				kcompactd_work_requested(pgdat));
+
+		/*
+		 * Proactive compaction: if sysctl_compaction_proactiveness > 0,
+		 * wake up periodically to keep fragmentation low. The interval
+		 * scales inversely with proactiveness and fragmentation score.
+		 */
+		if (sysctl_compaction_proactiveness) {
+			wakeup_jiffies = msecs_to_jiffies(
+				500 * (101 - sysctl_compaction_proactiveness));
+			wait_event_freezable_timeout(pgdat->kcompactd_wait,
+					kcompactd_work_requested(pgdat),
+					wakeup_jiffies);
+		} else {
+			wait_event_freezable(pgdat->kcompactd_wait,
+					kcompactd_work_requested(pgdat));
+		}
+
+		if (kthread_should_stop())
+			break;
 
 		psi_memstall_enter(&pflags);
-		kcompactd_do_work(pgdat);
+
+		/*
+		 * Reactive compaction: always run if explicitly requested
+		 * by direct reclaim or page allocator.
+		 */
+		if (pgdat->kcompactd_max_order > 0)
+			kcompactd_do_work(pgdat);
+
+		/*
+		 * Proactive compaction: run if fragmentation is high enough
+		 * relative to our proactiveness threshold.
+		 * Threshold = (100 - proactiveness) * 10 in [0, 1000].
+		 */
+		if (sysctl_compaction_proactiveness) {
+			score = fragmentation_score_node(pgdat);
+			if (score > (100 - sysctl_compaction_proactiveness) * 10) {
+				if (proactive_defer) {
+					proactive_defer--;
+				} else {
+					pgdat->kcompactd_max_order =
+						PAGE_ALLOC_COSTLY_ORDER + 1;
+					pgdat->kcompactd_classzone_idx =
+						pgdat->nr_zones - 1;
+					kcompactd_do_work(pgdat);
+					proactive_defer = score / 100;
+				}
+			}
+		}
+
 		psi_memstall_leave(&pflags);
 	}
 
