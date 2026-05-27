@@ -565,13 +565,28 @@ static void sugov_update_single(struct update_util_data *hook, u64 time,
 
 	ignore_dl_rate_limit(sg_cpu, sg_policy);
 
+	/*
+	 * Idle-exit fast ramp: if the CPU was idle since our last update,
+	 * force need_freq_update so sugov_should_update_freq() bypasses
+	 * the rate limit. This ensures frequency is set on the very first
+	 * tick of a new task on a formerly-idle CPU rather than waiting
+	 * up to up_rate_limit_us before responding.
+	 * sugov_cpu_is_busy() is called here to consume saved_idle_calls
+	 * so we don't call it again below.
+	 */
+#ifdef CONFIG_NO_HZ_COMMON
+	busy = sugov_cpu_is_busy(sg_cpu);
+	if (!busy)
+		sg_policy->need_freq_update = true;
+	busy = busy && !sg_policy->need_freq_update;
+#else
+	busy = false;
+#endif
+
 	if (!sugov_should_update_freq(sg_policy, time)) {
 		raw_spin_unlock(&sg_policy->update_lock);
 		return;
 	}
-
-	/* Limits may have changed, don't skip frequency update */
-	busy = !sg_policy->need_freq_update && sugov_cpu_is_busy(sg_cpu);
 
 	util = sugov_get_util(sg_cpu);
 	max = sg_cpu->max;
@@ -678,6 +693,12 @@ sugov_update_shared(struct update_util_data *hook, u64 time, unsigned int flags)
 	sg_cpu->last_update = time;
 
 	ignore_dl_rate_limit(sg_cpu, sg_policy);
+
+	/* Idle-exit: bypass rate limit when this CPU just exited idle */
+#ifdef CONFIG_NO_HZ_COMMON
+	if (!sugov_cpu_is_busy(sg_cpu))
+		sg_policy->need_freq_update = true;
+#endif
 
 	cid = arch_cpu_cluster_id(sg_policy->policy->cpu);
 
