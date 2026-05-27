@@ -430,6 +430,13 @@ static void sugov_iowait_boost(struct sugov_cpu *sg_cpu, u64 time,
 {
 	bool set_iowait_boost = flags & SCHED_CPUFREQ_IOWAIT;
 
+	/*
+	 * RT/DL tasks will request max freq via schedutil_cpu_util() directly;
+	 * don't let them pollute iowait_boost state.
+	 */
+	if (flags & (SCHED_CPUFREQ_RT | SCHED_CPUFREQ_DL))
+		return;
+
 	/* Reset boost if the CPU appears to have been idle enough */
 	if (sg_cpu->iowait_boost &&
 	    sugov_iowait_reset(sg_cpu, time, set_iowait_boost))
@@ -447,7 +454,7 @@ static void sugov_iowait_boost(struct sugov_cpu *sg_cpu, u64 time,
 	/* Double the boost at each request */
 	if (sg_cpu->iowait_boost) {
 		sg_cpu->iowait_boost =
-			min_t(unsigned int, sg_cpu->iowait_boost << 1, SCHED_CAPACITY_SCALE);
+			min_t(unsigned int, sg_cpu->iowait_boost << 1, SCHED_CAPACITY_SCALE >> 1);
 
 		return;
 	}
@@ -572,7 +579,16 @@ static void sugov_update_single(struct update_util_data *hook, u64 time,
 #ifdef CONFIG_UCLAMP_TASK
 	trace_schedutil_uclamp_util(policy->cpu, util);
 #endif
-	next_f = get_next_freq(sg_policy, util, max);
+	/*
+	 * RT/DL tasks: bypass util estimation and go straight to policy max.
+	 * sugov_get_util already handles rt_rq_is_runnable when !uclamp_is_used;
+	 * with uclamp active, the flag gives us a reliable RT/DL signal.
+	 */
+	if ((flags & (SCHED_CPUFREQ_RT | SCHED_CPUFREQ_DL)) &&
+	    !uclamp_is_used())
+		next_f = policy->cpuinfo.max_freq;
+	else
+		next_f = get_next_freq(sg_policy, util, max);
 	/*
 	 * Do not reduce the frequency if the CPU has not been idle
 	 * recently, as the reduction is likely to be premature then.
@@ -1046,7 +1062,7 @@ static int sugov_init(struct cpufreq_policy *policy)
 	}
 
 	tunables->up_rate_limit_us = 500;
-	tunables->down_rate_limit_us = cpufreq_policy_transition_delay_us(policy);
+	tunables->down_rate_limit_us = 2000;
 
 	policy->governor_data = sg_policy;
 	sg_policy->tunables = tunables;

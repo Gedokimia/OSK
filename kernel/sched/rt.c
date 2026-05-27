@@ -558,7 +558,7 @@ static void sched_rt_rq_dequeue(struct rt_rq *rt_rq)
 	if (!rt_se) {
 		dequeue_top_rt_rq(rt_rq, rt_rq->rt_nr_running);
 		/* Kick cpufreq (see the comment in kernel/sched/sched.h). */
-		cpufreq_update_util(rq_of_rt_rq(rt_rq), 0);
+		cpufreq_update_util(rq_of_rt_rq(rt_rq), SCHED_CPUFREQ_RT);
 	}
 	else if (on_rt_rq(rt_se))
 		dequeue_rt_entity(rt_se, 0);
@@ -1085,7 +1085,7 @@ enqueue_top_rt_rq(struct rt_rq *rt_rq)
 	}
 
 	/* Kick cpufreq (see the comment in kernel/sched/sched.h). */
-	cpufreq_update_util(rq, 0);
+	cpufreq_update_util(rq, SCHED_CPUFREQ_RT);
 }
 
 #if defined CONFIG_SMP
