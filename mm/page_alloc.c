@@ -323,7 +323,7 @@ compound_page_dtor * const compound_page_dtors[] = {
  */
 int min_free_kbytes = 1024;
 int user_min_free_kbytes = -1;
-int watermark_scale_factor = 10;
+int watermark_scale_factor = 150;	/* Android: kswapd wakes at 15% below high watermark */
 
 /*
  * Extra memory for the system to try freeing. Used to temporarily
@@ -7654,7 +7654,7 @@ int __meminit init_per_zone_wmark_min(void)
 	if (new_min_free_kbytes > user_min_free_kbytes) {
 		min_free_kbytes = new_min_free_kbytes;
 		if (min_free_kbytes < 128)
-			min_free_kbytes = 128;
+			min_free_kbytes = 8192;	/* 8MB floor for 2-4GB Android devices */
 		if (min_free_kbytes > 65536)
 			min_free_kbytes = 65536;
 	} else {
