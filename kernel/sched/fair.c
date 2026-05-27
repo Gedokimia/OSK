@@ -659,12 +659,26 @@ int sched_proc_update_handler(struct ctl_table *table, int write,
 /*
  * delta /= w
  */
+/* BORE: burst penalty — scale vruntime for CPU-bound tasks */
+static u64 bore_calc_penalty(u64 burst_time)
+{
+	u64 g = burst_time >> 20; /* 1M ns = ~1ms units */
+	return g ? (ilog2(g) + 1) : 0;
+}
+
+static inline u64 bore_scale(u64 delta, struct sched_entity *se)
+{
+	u64 penalty;
+	if (!entity_is_task(se)) return delta;
+	penalty = bore_calc_penalty(se->burst_time);
+	return delta + (delta * min_t(u64, penalty, 3ULL) >> 3);
+}
 static inline u64 calc_delta_fair(u64 delta, struct sched_entity *se)
 {
 	if (unlikely(se->load.weight != NICE_0_LOAD))
 		delta = __calc_delta(delta, NICE_0_LOAD, &se->load);
 
-	return delta;
+	return bore_scale(delta, se);
 }
 
 /*
@@ -853,6 +867,8 @@ static void update_curr(struct cfs_rq *cfs_rq)
 
 	curr->sum_exec_runtime += delta_exec;
 	schedstat_add(cfs_rq->exec_clock, delta_exec);
+	/* BORE: accumulate burst time */
+	curr->burst_time += delta_exec;
 
 	curr->vruntime += calc_delta_fair(delta_exec, curr);
 	update_min_vruntime(cfs_rq);
@@ -4080,6 +4096,9 @@ enqueue_entity(struct cfs_rq *cfs_rq, struct sched_entity *se, int flags)
 {
 	bool renorm = !(flags & ENQUEUE_WAKEUP) || (flags & ENQUEUE_MIGRATED);
 	bool curr = cfs_rq->curr == se;
+	/* BORE: reset burst on wakeup from sleep — task is interactive again */
+	if ((flags & ENQUEUE_WAKEUP) && !(flags & ENQUEUE_MIGRATED))
+		se->burst_time = 0;
 
 	/*
 	 * If we're the current task, we must renormalise before calling
@@ -7935,7 +7954,25 @@ static unsigned long wakeup_gran(struct sched_entity *se)
 	 *
 	 * This is especially important for buddies when the leftmost
 	 * task is higher priority than the buddy.
+	 *
+	 * latency_nice adjustment: latency-sensitive tasks (latency_prio < 0)
+	 * get a reduced granularity so they preempt the current task faster.
+	 * Background tasks (latency_prio > 0) get increased granularity.
+	 * Scale factor: 2^(latency_prio / 10), clamped to [gran/4, gran*4].
 	 */
+	if (entity_is_task(se)) {
+		int lp = task_of(se)->latency_prio;
+
+		if (lp < -10)
+			gran >>= 2;          /* /4: very latency-sensitive */
+		else if (lp < 0)
+			gran >>= 1;          /* /2: latency-sensitive */
+		else if (lp > 10)
+			gran <<= 2;          /* *4: background burster */
+		else if (lp > 0)
+			gran <<= 1;          /* *2: mildly background */
+	}
+
 	return calc_delta_fair(gran, se);
 }
 

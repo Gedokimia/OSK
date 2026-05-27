@@ -3084,6 +3084,7 @@ int wake_up_state(struct task_struct *p, unsigned int state)
 static void __sched_fork(unsigned long clone_flags, struct task_struct *p)
 {
 	p->on_rq			= 0;
+	p->latency_prio			= 0;
 
 	p->se.on_rq			= 0;
 	p->se.exec_start		= 0;
@@ -5519,7 +5520,11 @@ EXPORT_SYMBOL_GPL(sched_setattr);
 
 int sched_setattr_nocheck(struct task_struct *p, const struct sched_attr *attr)
 {
-	return __sched_setscheduler(p, attr, false, true);
+	int ret = __sched_setscheduler(p, attr, false, true);
+
+	if (!ret && p->policy == SCHED_NORMAL)
+		p->latency_prio = (int)attr->sched_latency_nice;
+	return ret;
 }
 
 /**
@@ -5646,6 +5651,13 @@ static int sched_copy_attr(struct sched_attr __user *uattr, struct sched_attr *a
 	 * to be strict and return an error on out-of-bounds values?
 	 */
 	attr->sched_nice = clamp(attr->sched_nice, MIN_NICE, MAX_NICE);
+
+	/* VER2: latency_nice */
+	if (size >= SCHED_ATTR_SIZE_VER2)
+		attr->sched_latency_nice = clamp_t(__s32,
+				attr->sched_latency_nice, MIN_NICE, MAX_NICE);
+	else
+		attr->sched_latency_nice = 0;
 
 	return 0;
 
@@ -5880,6 +5892,7 @@ SYSCALL_DEFINE4(sched_getattr, pid_t, pid, struct sched_attr __user *, uattr,
 	kattr.sched_util_max = p->uclamp_req[UCLAMP_MAX].value;
 #endif
 
+	kattr.sched_latency_nice = p->latency_prio;
 	rcu_read_unlock();
 
 	return sched_attr_copy_to_user(uattr, &kattr, usize);
