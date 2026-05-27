@@ -265,13 +265,13 @@ static unsigned long ksm_stable_node_dups;
 static int ksm_stable_node_chains_prune_millisecs = 2000;
 
 /* Maximum number of page slots sharing a stable node */
-static int ksm_max_page_sharing = 256;
+static int ksm_max_page_sharing = 512;
 
 /* Number of pages ksmd should scan in one batch */
-static unsigned int ksm_thread_pages_to_scan = 100;
+static unsigned int ksm_thread_pages_to_scan = 256;
 
 /* Milliseconds ksmd should sleep between batches */
-static unsigned int ksm_thread_sleep_millisecs = 20;
+static unsigned int ksm_thread_sleep_millisecs = 500;
 
 /* Checksum of an empty (zeroed) page */
 static unsigned int zero_checksum __read_mostly;

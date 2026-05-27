@@ -474,6 +474,7 @@ struct sched_entity {
 	u64				sum_exec_runtime;
 	u64				vruntime;
 	u64				prev_sum_exec_runtime;
+	u64				burst_time;		/* BORE: runtime since last sleep */
 
 	u64				nr_migrations;
 
@@ -707,6 +708,7 @@ struct task_struct {
 	int				static_prio;
 	int				normal_prio;
 	unsigned int			rt_priority;
+	int				latency_prio;	/* -20..19, latency hint for CFS */
 
 	const struct sched_class	*sched_class;
 	struct sched_entity		se;
