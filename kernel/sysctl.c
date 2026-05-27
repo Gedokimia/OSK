@@ -425,6 +425,16 @@ static struct ctl_table kern_table[] = {
 		.proc_handler	= proc_dointvec,
 	},
 	{
+	{
+		.procname	= "sched_capacity_margin",
+		.data		= &capacity_margin,
+		.maxlen		= sizeof(unsigned int),
+		.mode		= 0644,
+		.proc_handler	= proc_douintvec_minmax,
+		.extra1		= (void *)&sched_capacity_margin_min,
+		.extra2		= (void *)&sched_capacity_margin_max,
+	},
+	{
 		.procname	= "sched_wakeup_granularity_ns",
 		.data		= &sysctl_sched_wakeup_granularity,
 		.maxlen		= sizeof(unsigned int),

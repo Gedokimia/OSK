@@ -34,6 +34,8 @@ static inline unsigned long map_util_freq(unsigned long util,
 
 #ifdef CONFIG_NONLINEAR_FREQ_CTL
 extern unsigned int capacity_margin;
+extern const unsigned int sched_capacity_margin_min;
+extern const unsigned int sched_capacity_margin_max;
 extern unsigned int mt_cpufreq_get_cpu_freq(int cpu, int idx);
 __attribute__((unused)) static unsigned long mtk_map_util_freq(int cpu, unsigned long util)
 {
