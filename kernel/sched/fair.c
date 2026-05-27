@@ -138,6 +138,11 @@ unsigned int sysctl_sched_cfs_bandwidth_slice		= 5000UL;
  * (default: ~20%)
  */
 unsigned int capacity_margin				= 1150;
+const unsigned int sched_capacity_margin_min		= 1024;
+const unsigned int sched_capacity_margin_max		= 1920;
+EXPORT_SYMBOL_GPL(capacity_margin);
+EXPORT_SYMBOL_GPL(sched_capacity_margin_min);
+EXPORT_SYMBOL_GPL(sched_capacity_margin_max);
 
 static inline void update_load_add(struct load_weight *lw, unsigned long inc)
 {
@@ -5316,7 +5321,7 @@ static inline unsigned long cpu_util(int cpu);
 static unsigned long capacity_of(int cpu);
 
 #ifdef CONFIG_MTK_SCHED_EXTENSION
-#define fits_capacity(cap, max) ((cap) * 1150 < (max) * 1024)
+#define fits_capacity(cap, max) ((cap) * capacity_margin < (max) * 1024)
 
 static struct perf_domain *find_pd(struct perf_domain *pd, int cpu)
 {
