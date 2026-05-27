@@ -194,6 +194,7 @@ static int  __read_mostly futex_cmpxchg_enabled;
 # define FLAGS_SHARED		0x00
 #endif
 #define FLAGS_CLOCKRT		0x02
+#define FUTEX_WAIT_MULTIPLE_MAX	128
 #define FLAGS_HAS_TIMEOUT	0x04
 
 /*
@@ -3864,6 +3865,178 @@ void futex_exit_release(struct task_struct *tsk)
 	futex_cleanup_end(tsk, FUTEX_STATE_DEAD);
 }
 
+
+/*
+ * futex_wait_multiple() - Wait on several futexes simultaneously.
+ * @vs:       array of futex_vector (kernel copy with futex_q embedded)
+ * @count:    number of entries in @vs
+ * @abs_time: optional abs timeout
+ * @flags:    FLAGS_SHARED / FLAGS_CLOCKRT
+ *
+ * Backported from upstream futex2 work (v5.16+) for 4.19 kernels.
+ * Returns the index [0..count-1] of the woken futex, or -errno.
+ */
+struct futex_vector {
+	struct futex_wait_block w;
+	struct futex_q q;
+};
+
+static int futex_wait_multiple_setup(struct futex_vector *vs, int count,
+				     unsigned int flags)
+{
+	struct futex_hash_bucket *hb;
+	int ret, i;
+	u32 uval;
+
+	set_current_state(TASK_INTERRUPTIBLE);
+
+	for (i = 0; i < count; i++) {
+		vs[i].q = futex_q_init;
+		vs[i].q.bitset = vs[i].w.bitset ? vs[i].w.bitset
+						 : FUTEX_BITSET_MATCH_ANY;
+
+		ret = get_futex_key(vs[i].w.uaddr, flags & FLAGS_SHARED,
+				    &vs[i].q.key, VERIFY_READ);
+		if (ret)
+			goto error;
+
+		hb = queue_lock(&vs[i].q);
+
+		ret = get_futex_value_locked(&uval, vs[i].w.uaddr);
+		if (ret) {
+			queue_unlock(hb);
+			__set_current_state(TASK_RUNNING);
+			put_futex_key(&vs[i].q.key);
+			ret = get_user(uval, vs[i].w.uaddr);
+			if (!ret)
+				ret = -EAGAIN;
+			goto error;
+		}
+
+		if (uval != vs[i].w.val) {
+			queue_unlock(hb);
+			__set_current_state(TASK_RUNNING);
+			put_futex_key(&vs[i].q.key);
+			/* val mismatch: futex[i] already signaled, return i+1 */
+			ret = i + 1;
+			goto error;
+		}
+
+		queue_me(&vs[i].q, hb);
+	}
+	return 0;
+
+error:
+	/* Release keys for entries we already set up */
+	while (--i >= 0) {
+		unqueue_me(&vs[i].q);
+		put_futex_key(&vs[i].q.key);
+	}
+	return ret;
+}
+
+static int futex_wait_multiple(struct futex_wait_block __user *uwaitblocks,
+			       u32 count, ktime_t *abs_time,
+			       unsigned int flags)
+{
+	struct hrtimer_sleeper timeout, *to = NULL;
+	struct futex_vector *vs;
+	int ret, i, woken = -1;
+
+	if (!count || count > FUTEX_WAIT_MULTIPLE_MAX)
+		return -EINVAL;
+
+	vs = kcalloc(count, sizeof(*vs), GFP_KERNEL);
+	if (!vs)
+		return -ENOMEM;
+
+	for (i = 0; i < count; i++) {
+		if (copy_from_user(&vs[i].w, &uwaitblocks[i], sizeof(vs[i].w))) {
+			kfree(vs);
+			return -EFAULT;
+		}
+		if (vs[i].w.__pad) {
+			kfree(vs);
+			return -EINVAL;
+		}
+	}
+
+	if (abs_time) {
+		to = &timeout;
+		hrtimer_init_on_stack(&to->timer,
+				      (flags & FLAGS_CLOCKRT) ? CLOCK_REALTIME
+							     : CLOCK_MONOTONIC,
+				      HRTIMER_MODE_ABS);
+		hrtimer_init_sleeper(to, current);
+		hrtimer_set_expires_range_ns(&to->timer, *abs_time,
+					     current->timer_slack_ns);
+	}
+
+retry:
+	ret = futex_wait_multiple_setup(vs, count, flags);
+	if (ret < 0)
+		goto out_free;
+	if (ret >= 0) {
+		/*
+		 * ret >= 0 from setup means val mismatch on entry ret —
+		 * that futex is already ready (woken before sleep).
+		 */
+		woken = ret;
+		ret = woken;
+		goto out_free;
+	}
+
+	if (to)
+		hrtimer_start_expires(&to->timer, HRTIMER_MODE_ABS);
+
+	/* Check for pre-wakeup (enqueue raced with futex_wake) */
+	for (i = 0; i < count; i++) {
+		if (plist_node_empty(&vs[i].q.list)) {
+			woken = i;
+			__set_current_state(TASK_RUNNING);
+			goto out_unqueue;
+		}
+	}
+
+	if (!to || to->task)
+		freezable_schedule();
+
+	__set_current_state(TASK_RUNNING);
+
+out_unqueue:
+	for (i = 0; i < count; i++) {
+		if (!unqueue_me(&vs[i].q) && woken < 0)
+			woken = i;
+		put_futex_key(&vs[i].q.key);
+	}
+
+	if (woken >= 0) {
+		ret = woken;
+		goto out_free;
+	}
+
+	if (to && !to->task) {
+		ret = -ETIMEDOUT;
+		goto out_free;
+	}
+
+	if (signal_pending(current)) {
+		ret = -ERESTARTSYS;
+		goto out_free;
+	}
+
+	/* Spurious wakeup — retry */
+	goto retry;
+
+out_free:
+	kfree(vs);
+	if (to) {
+		hrtimer_cancel(&to->timer);
+		destroy_hrtimer_on_stack(&to->timer);
+	}
+	return ret;
+}
+
 long do_futex(u32 __user *uaddr, int op, u32 val, ktime_t *timeout,
 		u32 __user *uaddr2, u32 val2, u32 val3)
 {
@@ -3918,6 +4091,9 @@ long do_futex(u32 __user *uaddr, int op, u32 val, ktime_t *timeout,
 					     uaddr2);
 	case FUTEX_CMP_REQUEUE_PI:
 		return futex_requeue(uaddr, flags, uaddr2, val, val2, &val3, 1);
+	case FUTEX_WAIT_MULTIPLE:
+		return futex_wait_multiple((struct futex_wait_block __user *)uaddr,
+					   val, timeout, flags);
 	}
 	return -ENOSYS;
 }
