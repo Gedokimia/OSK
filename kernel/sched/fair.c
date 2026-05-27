@@ -3883,9 +3883,19 @@ util_est_dequeue(struct cfs_rq *cfs_rq, struct task_struct *p, bool task_sleep)
 	 * Where 'w' is the weight of new samples, which is configured to be
 	 * 0.25, thus making w=1/4 ( >>= UTIL_EST_WEIGHT_SHIFT)
 	 */
-	ue.ewma <<= UTIL_EST_WEIGHT_SHIFT;
-	ue.ewma  += last_ewma_diff;
-	ue.ewma >>= UTIL_EST_WEIGHT_SHIFT;
+	/*
+	 * Accelerated decay: if task is running at less than half its
+	 * historical EWMA, decay 2x faster (w=0.5) to correct stale
+	 * overestimates quickly. Prevents schedutil holding high freq
+	 * after a heavy task transitions to light workload.
+	 */
+	if (ue.enqueued < (ue.ewma >> 1)) {
+		ue.ewma = (ue.ewma + ue.enqueued) >> 1;
+	} else {
+		ue.ewma <<= UTIL_EST_WEIGHT_SHIFT;
+		ue.ewma  += last_ewma_diff;
+		ue.ewma >>= UTIL_EST_WEIGHT_SHIFT;
+	}
 done:
 	WRITE_ONCE(p->se.avg.util_est, ue);
 
