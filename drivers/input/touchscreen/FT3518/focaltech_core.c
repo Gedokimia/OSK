@@ -47,7 +47,7 @@ static int tpd_def_calmat_local_factory[8] =
 #endif
 
 #ifndef RTPM_PRIO_TPD
-#define RTPM_PRIO_TPD 0x04
+#define RTPM_PRIO_TPD 58
 #endif
 
 /*****************************************************************************
