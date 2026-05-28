@@ -3841,7 +3841,7 @@ defined(CONFIG_MTK_CAM_SECURITY_SUPPORT)
 		ac_charger_current = <2100000>;
                 /*C3T code for HQ-242612 by gengyifei at 2022/9/16 end*/
            /* C3T code for HQ-235504 by tongjiacheng at 2022/08/26 start */
-		ac_charger_input_current = <2050000>;
+		ac_charger_input_current = <2500000>;	/* Raised: was 2050mA */
            /* C3T code for HQ-235504 by tongjiacheng at 2022/08/26 end */
 		/*C3T code for HQ-242612 by gengyifei at 2022/9/16 start*/
 		non_std_ac_charger_current = <1000000>;
@@ -3899,7 +3899,7 @@ defined(CONFIG_MTK_CAM_SECURITY_SUPPORT)
 		min_charger_voltage_3 = <4200000>;
 		/* C3T code for HQ-249742 by tongjiacheng at 2022/09/27 end */
                 /*C3T code for HQ-231364 by gengyifei at 2022/8/11 end*/
-		max_dmivr_charger_current = <1400000>;
+		max_dmivr_charger_current = <2000000>;	/* MIVR: allow higher current during low-voltage cable */
 
 		/* charging current */
 		usb_charger_current_suspend = <0>;
@@ -3909,9 +3909,9 @@ defined(CONFIG_MTK_CAM_SECURITY_SUPPORT)
 		/* C3T code for HQ-219166 by tongjiacheng at 2022/08/12 start */
                 /*C3T code for HQ-242612 by gengyifei at 2022/9/16 start*/
                 /* C3T code for HQHW-3442 by tongjiacheng at 2022/11/02 start */
-		ac_charger_current = <2000000>;
+		ac_charger_current = <2500000>;	/* Raised: was 2000mA */
                 /*C3T code for HQ-242612 by gengyifei at 2022/9/16 end*/
-		ac_charger_input_current = <1900000>;
+		ac_charger_input_current = <2000000>;	/* Raised: was 1900mA */
                 /* C3T code for HQHW-3442 by tongjiacheng at 2022/11/02 end */
 		/* C3T code for HQ-219166 by tongjiacheng at 2022/08/12 end */
 		/* C3T code for HQ-218940 by gengyifei at 2022/08/30 start */
@@ -4007,8 +4007,8 @@ defined(CONFIG_MTK_CAM_SECURITY_SUPPORT)
 		pe40_r_cable_3a_lower = <245>;
 
 		/* dual charger */
-		chg1_ta_ac_charger_current = <1500000>;
-		chg2_ta_ac_charger_current = <1500000>;
+		chg1_ta_ac_charger_current = <2000000>;	/* Raised: was 1500mA */
+		chg2_ta_ac_charger_current = <2000000>;	/* Raised: was 1500mA */
 		slave_mivr_diff = <100000>;
 		dual_polling_ieoc = <450000>;
 
@@ -4024,7 +4024,7 @@ defined(CONFIG_MTK_CAM_SECURITY_SUPPORT)
 		/* PD */
 		pd_vbus_low_bound = <5000000>;
 		pd_vbus_upper_bound = <5000000>;
-		pd_ichg_level_threshold = <1000000>; /* uA */
+		pd_ichg_level_threshold = <500000>; /* uA - Lowered for PD high-current */
 		pd_stop_battery_soc = <80>;
 
 		ibus_err = <14>;
