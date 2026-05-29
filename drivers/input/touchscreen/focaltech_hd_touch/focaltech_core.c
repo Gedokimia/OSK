@@ -765,16 +765,6 @@ static int fts_irq_registration(struct fts_ts_data *ts_data)
 	}
 
 	ts_data->thread_tpd = kthread_run(touch_event_handler, 0, TPD_DEVICE);
-	if (!IS_ERR_OR_NULL(ts_data->thread_tpd)) {
-		/* Pin touch handler to big cluster (CPU4-7) for lowest latency */
-		struct cpumask big_mask;
-		cpumask_clear(&big_mask);
-		cpumask_set_cpu(4, &big_mask);
-		cpumask_set_cpu(5, &big_mask);
-		cpumask_set_cpu(6, &big_mask);
-		cpumask_set_cpu(7, &big_mask);
-		set_cpus_allowed_ptr(ts_data->thread_tpd, &big_mask);
-	}
 	if (IS_ERR_OR_NULL(ts_data->thread_tpd)) {
 		ret = PTR_ERR(ts_data->thread_tpd);
 		FTS_ERROR("create kernel thread_tpd fail,ret:%d", ret);
