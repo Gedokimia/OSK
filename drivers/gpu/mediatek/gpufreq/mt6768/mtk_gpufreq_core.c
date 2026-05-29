@@ -1543,6 +1543,37 @@ PROC_FOPS_RO(gpufreq_var_dump);
 PROC_FOPS_RW(gpufreq_fixed_freq_volt);
 PROC_FOPS_RO(gpufreq_sb_idx);
 PROC_FOPS_RW(gpufreq_aging_test);
+/* Forward declaration for GPU loading utility */
+extern bool mtk_get_gpu_loading(unsigned int *pLoading);
+
+/* /proc/gpufreq/gpufreq_status: realtime GPU state
+ * freq_cur_mhz, freq_max_mhz, freq_thermal_limit_mhz,
+ * volt_cur_mv, loading_pct, temp_c
+ */
+static int mt_gpufreq_status_proc_show(struct seq_file *m, void *v)
+{
+	unsigned int cur_freq, cur_volt, thermal_limit_freq;
+	unsigned int gpu_loading = 0;
+	int gpu_temp = 0;
+
+	cur_freq = __mt_gpufreq_get_cur_freq();
+	cur_volt = __mt_gpufreq_get_cur_volt();
+	thermal_limit_freq = mt_gpufreq_get_thermal_limit_freq();
+	mtk_get_gpu_loading(&gpu_loading);
+#ifdef CONFIG_MTK_THERMAL
+	gpu_temp = get_immediate_gpu_wrap() / 1000;
+#endif
+	seq_printf(m, "freq_cur_mhz=%u\n", cur_freq / 1000);
+	seq_printf(m, "freq_max_mhz=%u\n",
+		g_opp_table[g_segment_max_opp_idx].gpufreq_khz / 1000);
+	seq_printf(m, "freq_thermal_limit_mhz=%u\n", thermal_limit_freq / 1000);
+	seq_printf(m, "volt_cur_mv=%u\n", cur_volt / 100);
+	seq_printf(m, "loading_pct=%u\n", gpu_loading);
+	seq_printf(m, "temp_c=%d\n", gpu_temp);
+	return 0;
+}
+PROC_FOPS_RO(gpufreq_status);
+
 static int __mt_gpufreq_create_procfs(void)
 {
 	struct proc_dir_entry *dir = NULL;
@@ -1557,42 +1588,6 @@ static int __mt_gpufreq_create_procfs(void)
 		PROC_ENTRY(gpufreq_opp_stress_test),
 		PROC_ENTRY(gpufreq_power_limited),
 		PROC_ENTRY(gpufreq_opp_dump),
-
-/* -----------------------------------------------
- * /proc/gpufreq/gpufreq_status
- * Shows: cur_freq_mhz, cur_volt_mv, gpu_temp_c,
- *        gpu_loading_%, thermal_limit_freq_mhz
- * Read by any monitoring app / thermal daemon.
- * ----------------------------------------------- */
-static int mt_gpufreq_status_proc_show(struct seq_file *m, void *v)
-{
-	unsigned int cur_freq, cur_volt, thermal_limit_freq;
-	unsigned int gpu_loading = 0;
-	int gpu_temp = 0;
-
-	cur_freq = __mt_gpufreq_get_cur_freq();
-	cur_volt = __mt_gpufreq_get_cur_volt();
-	thermal_limit_freq = mt_gpufreq_get_thermal_limit_freq();
-
-	mtk_get_gpu_loading(&gpu_loading);
-
-#ifdef CONFIG_MTK_THERMAL
-	gpu_temp = get_immediate_gpu_wrap() / 1000;
-#endif
-
-	seq_printf(m, "freq_cur_mhz=%u\n", cur_freq / 1000);
-	seq_printf(m, "freq_max_mhz=%u\n",
-		g_opp_table[g_segment_max_opp_idx].gpufreq_khz / 1000);
-	seq_printf(m, "freq_thermal_limit_mhz=%u\n", thermal_limit_freq / 1000);
-	seq_printf(m, "volt_cur_mv=%u\n", cur_volt / 100);
-	seq_printf(m, "loading_pct=%u\n", gpu_loading);
-	seq_printf(m, "temp_c=%d\n", gpu_temp);
-
-	return 0;
-}
-
-PROC_FOPS_RO(gpufreq_status);
-
 		PROC_ENTRY(gpufreq_status),
 		PROC_ENTRY(gpufreq_power_dump),
 		PROC_ENTRY(gpufreq_opp_freq),
