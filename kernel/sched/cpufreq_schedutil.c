@@ -382,8 +382,14 @@ static unsigned long sugov_get_util(struct sugov_cpu *sg_cpu)
 	sg_cpu->max = max;
 	sg_cpu->bw_dl = cpu_bw_dl(rq);
 
-	return schedutil_cpu_util(sg_cpu->cpu, util_cfs, max,
+	util_cfs = schedutil_cpu_util(sg_cpu->cpu, util_cfs, max,
 				  FREQUENCY_UTIL, NULL);
+	/* KernelBumi: 10% freq floor when CPU is non-idle — prevents
+	 * freq staying at policy->min during micro-burst workloads.
+	 */
+	if (util_cfs > 0)
+		util_cfs = max(util_cfs, max / 10);
+	return util_cfs;
 }
 
 /**
