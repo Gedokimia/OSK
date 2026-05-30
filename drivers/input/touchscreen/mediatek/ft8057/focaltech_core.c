@@ -1194,6 +1194,17 @@ static int fts_irq_registration(struct fts_ts_data *ts_data)
     ret = request_threaded_irq(ts_data->irq, NULL, fts_irq_handler,
                                pdata->irq_gpio_flags,
                                FTS_DRIVER_NAME, ts_data);
+    if (!ret) {
+        /* KernelBumi: boost IRQ thread to SCHED_FIFO prio 58
+         * irqaction->thread via irq_to_desc(); reduces touch latency.
+         * No CPU affinity (reverted in 0015 due to lockup on G85).
+         */
+        struct irq_desc *desc = irq_to_desc(ts_data->irq);
+        if (desc && desc->action && desc->action->thread) {
+            struct sched_param param = { .sched_priority = 58 };
+            sched_setscheduler(desc->action->thread, SCHED_FIFO, &param);
+        }
+    }
 
     return ret;
 }
