@@ -435,14 +435,6 @@ static struct ctl_table kern_table[] = {
 		.extra2		= (void *)&sched_capacity_margin_max,
 	},
 	{
-		/* KernelBumi: runtime toggle for A75 big-task rotation */
-		.procname	= "sched_big_task_rotation_enable",
-		.data		= &big_task_rotation_enable,
-		.maxlen		= sizeof(unsigned int),
-		.mode		= 0644,
-		.proc_handler	= proc_dointvec,
-	},
-	{
 		.procname	= "sched_wakeup_granularity_ns",
 		.data		= &sysctl_sched_wakeup_granularity,
 		.maxlen		= sizeof(unsigned int),
