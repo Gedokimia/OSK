@@ -731,19 +731,11 @@ static int takeover_tasklets(unsigned int cpu)
 #define takeover_tasklets	NULL
 #endif /* CONFIG_HOTPLUG_CPU */
 
-static int ksoftirqd_setup(unsigned int cpu)
-{
-	/* KernelBumi: nice=-1 — better network/IO softirq throughput */
-	set_user_nice(current, -1);
-	return 0;
-}
-
 static struct smp_hotplug_thread softirq_threads = {
 	.store			= &ksoftirqd,
 	.thread_should_run	= ksoftirqd_should_run,
 	.thread_fn		= run_ksoftirqd,
 	.thread_comm		= "ksoftirqd/%u",
-	.setup			= ksoftirqd_setup,
 };
 
 static __init int spawn_ksoftirqd(void)
