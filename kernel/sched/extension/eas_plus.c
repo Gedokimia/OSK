@@ -868,7 +868,6 @@ done:
 DEFINE_PER_CPU(struct task_rotate_work, task_rotate_works);
 struct task_rotate_reset_uclamp_work task_rotate_reset_uclamp_works;
 bool big_task_rotation_enable = true; /* KernelBumi: push big tasks to big cores */
-EXPORT_SYMBOL_GPL(big_task_rotation_enable);
 bool set_uclamp;
 
 unsigned int scale_to_percent(unsigned int value)
