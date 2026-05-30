@@ -3928,7 +3928,7 @@ static bool age_lruvec(struct lruvec *lruvec, struct scan_control *sc,
 }
 
 /* to protect the working set of the last N jiffies */
-static unsigned long lru_gen_min_ttl __read_mostly;
+static unsigned long lru_gen_min_ttl __read_mostly = 1000; /* KernelBumi: 1s cold-page TTL */
 
 static void lru_gen_age_node(struct pglist_data *pgdat, struct scan_control *sc)
 {
@@ -6728,6 +6728,8 @@ int kswapd_run(int nid)
 		return 0;
 
 	pgdat->kswapd = kthread_run(kswapd, pgdat, "kswapd%d", nid);
+	if (!IS_ERR(pgdat->kswapd))
+		set_user_nice(pgdat->kswapd, -2); /* KernelBumi: faster reclaim response */
 	if (IS_ERR(pgdat->kswapd)) {
 		/* failure at boot is fatal */
 		BUG_ON(system_state < SYSTEM_RUNNING);
