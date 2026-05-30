@@ -260,7 +260,7 @@ static inline int which_bucket(unsigned int duration,
 static inline int performance_multiplier(unsigned long nr_iowaiters,
 				unsigned long load)
 {
-	int mult = 1;
+	int mult = 4; /* KernelBumi: base 1->4, shallower idle under load */
 
 	/* for higher loadavg, we are more reluctant */
 
