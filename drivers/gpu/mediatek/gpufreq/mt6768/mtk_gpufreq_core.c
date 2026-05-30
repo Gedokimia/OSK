@@ -3067,8 +3067,6 @@ out:
 	aee_rr_rec_gpu_dvfs_oppidx(0xFF);
 	aee_rr_rec_gpu_dvfs_status(0x0);
 #endif
-	if (!ret)
-		__mt_gpufreq_create_sysfs();
 	return ret;
 }
 
@@ -3078,55 +3076,6 @@ out:
 static void __exit __mt_gpufreq_exit(void)
 {
 	platform_driver_unregister(&g_gpufreq_pdrv);
-}
-
-
-/* KernelBumi: sysfs /sys/kernel/gpufreq/{cur_freq_mhz,cur_volt_mv,loading_pct} */
-static struct kobject *gpufreq_kobj;
-
-static ssize_t cur_freq_mhz_show(struct kobject *kobj,
-		struct kobj_attribute *attr, char *buf)
-{
-	return sprintf(buf, "%u\n", __mt_gpufreq_get_cur_freq() / 1000);
-}
-static struct kobj_attribute attr_cur_freq = __ATTR_RO(cur_freq_mhz);
-
-static ssize_t cur_volt_mv_show(struct kobject *kobj,
-		struct kobj_attribute *attr, char *buf)
-{
-	return sprintf(buf, "%u\n", __mt_gpufreq_get_cur_volt() / 100);
-}
-static struct kobj_attribute attr_cur_volt = __ATTR_RO(cur_volt_mv);
-
-static ssize_t loading_pct_show(struct kobject *kobj,
-		struct kobj_attribute *attr, char *buf)
-{
-	unsigned int loading = 0;
-	mtk_get_gpu_loading(&loading);
-	return sprintf(buf, "%u\n", loading);
-}
-static struct kobj_attribute attr_loading = __ATTR_RO(loading_pct);
-
-static struct attribute *gpufreq_attrs[] = {
-	&attr_cur_freq.attr,
-	&attr_cur_volt.attr,
-	&attr_loading.attr,
-	NULL,
-};
-static struct attribute_group gpufreq_attr_group = {
-	.attrs = gpufreq_attrs,
-};
-
-static int __mt_gpufreq_create_sysfs(void)
-{
-	int ret;
-	gpufreq_kobj = kobject_create_and_add("gpufreq", kernel_kobj);
-	if (!gpufreq_kobj)
-		return -ENOMEM;
-	ret = sysfs_create_group(gpufreq_kobj, &gpufreq_attr_group);
-	if (ret)
-		kobject_put(gpufreq_kobj);
-	return ret;
 }
 
 module_init(__mt_gpufreq_init);
