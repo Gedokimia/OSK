@@ -867,7 +867,7 @@ done:
 #ifdef CONFIG_MTK_SCHED_BIG_TASK_MIGRATE
 DEFINE_PER_CPU(struct task_rotate_work, task_rotate_works);
 struct task_rotate_reset_uclamp_work task_rotate_reset_uclamp_works;
-bool big_task_rotation_enable;
+bool big_task_rotation_enable = true; /* KernelBumi: push big tasks to big cores */
 bool set_uclamp;
 
 unsigned int scale_to_percent(unsigned int value)
