@@ -4164,8 +4164,8 @@ unsigned int __read_mostly netdev_budget_usecs = 2 * USEC_PER_SEC / HZ;
 int weight_p __read_mostly = 64;           /* old backlog weight */
 int dev_weight_rx_bias __read_mostly = 1;  /* bias for backlog weight */
 int dev_weight_tx_bias __read_mostly = 1;  /* bias for output_queue quota */
-int dev_rx_weight __read_mostly = 64;
-int dev_tx_weight __read_mostly = 64;
+int dev_rx_weight __read_mostly = 128; /* KernelBumi: higher NAPI poll weight */
+int dev_tx_weight __read_mostly = 128; /* KernelBumi */
 
 /* Called with irq disabled */
 static inline void ____napi_schedule(struct softnet_data *sd,
