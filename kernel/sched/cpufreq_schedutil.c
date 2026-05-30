@@ -406,7 +406,8 @@ static bool sugov_iowait_reset(struct sugov_cpu *sg_cpu, u64 time,
 	if (delta_ns <= TICK_NSEC)
 		return false;
 
-	sg_cpu->iowait_boost = set_iowait_boost ? sg_cpu->min : 0;
+	/* KernelBumi: start iowait boost at max — IO wakes deserve full freq */
+	sg_cpu->iowait_boost = set_iowait_boost ? sg_cpu->max : 0;
 	sg_cpu->iowait_boost_pending = set_iowait_boost;
 
 	return true;
@@ -459,8 +460,8 @@ static void sugov_iowait_boost(struct sugov_cpu *sg_cpu, u64 time,
 		return;
 	}
 
-	/* First wakeup after IO: start with minimum boost */
-	sg_cpu->iowait_boost = sg_cpu->min;
+	/* KernelBumi: First IO wake — start at max/2, not min */
+	sg_cpu->iowait_boost = sg_cpu->max / 2;
 }
 
 /**
