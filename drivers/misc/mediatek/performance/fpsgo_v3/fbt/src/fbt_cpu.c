@@ -3269,8 +3269,8 @@ int __init fbt_cpu_init(void)
 {
 	bhr = 5;
 	bhr_opp = 1;
-	rescue_opp_c = (NR_FREQ_CPU - 1);
-	rescue_opp_f = 5;
+	rescue_opp_c = (NR_FREQ_CPU / 2); /* KernelBumi: mid-OPP rescue on little */
+	rescue_opp_f = 2;                  /* KernelBumi: higher freq rescue on big */
 	rescue_percent = DEF_RESCUE_PERCENT;
 	min_rescue_percent = 10;
 	short_rescue_ns = DEF_RESCUE_NS_TH;
@@ -3287,7 +3287,7 @@ int __init fbt_cpu_init(void)
 	loading_adj_cnt = 30;
 	loading_debnc_cnt = 30;
 	loading_time_diff = TIME_2MS;
-	llf_task_policy = FPSGO_LLF_CPU_NONE;
+	llf_task_policy = FPSGO_LLF_CPU_PREFER; /* KernelBumi: prefer big for LLF */
 
 	_gdfrc_fps_limit = TARGET_DEFAULT_FPS;
 	vsync_period = GED_VSYNC_MISS_QUANTUM_NS;
