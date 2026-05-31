@@ -90,7 +90,7 @@
  * progress.
  */
 #ifndef _Q_PENDING_LOOPS
-#define _Q_PENDING_LOOPS	1
+#define _Q_PENDING_LOOPS	4	/* KernelBumi: spin 4x before queuing, reduce MCS alloc */
 #endif
 
 /*
