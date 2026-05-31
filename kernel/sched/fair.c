@@ -8468,7 +8468,7 @@ static bool yield_to_task_fair(struct rq *rq, struct task_struct *p, bool preemp
  *      rewrite all of this once again.]
  */
 
-static unsigned long __read_mostly max_load_balance_interval = HZ/10;
+static unsigned long __read_mostly max_load_balance_interval = HZ/5; /* KernelBumi: 50ms LB **/
 
 enum fbq_type { regular, remote, all };
 
