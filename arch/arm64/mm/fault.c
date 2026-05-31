@@ -224,6 +224,20 @@ int ptep_set_access_flags(struct vm_area_struct *vma,
 	pte_val(entry) &= PTE_RDONLY | PTE_AF | PTE_WRITE | PTE_DIRTY;
 
 	/*
+	 * KernelBumi: skip TLB flush when only hardware AF/dirty bits changed
+	 * and permission bits are identical. Hardware-managed AF updates are
+	 * common on ARM64; the full TLB flush is unnecessary and costly.
+	 * Ref: 5.8 arm64 "avoid spurious TLB invalidations" series.
+	 */
+	{
+		pte_t cur = READ_ONCE(*ptep);
+		pte_t diff = __pte(pte_val(cur) ^ pte_val(entry));
+		pte_t perm_mask = __pte(PTE_RDONLY | PTE_UXN | PTE_PXN | PTE_USER);
+		if (!(pte_val(diff) & pte_val(perm_mask)))
+			goto perm_unchanged;
+	}
+
+	/*
 	 * Setting the flags must be done atomically to avoid racing with the
 	 * hardware update of the access/dirty state. The PTE_RDONLY bit must
 	 * be set to the most permissive (lowest value) of *ptep and entry
@@ -240,6 +254,7 @@ int ptep_set_access_flags(struct vm_area_struct *vma,
 	} while (pteval != old_pteval);
 
 	flush_tlb_fix_spurious_fault(vma, address);
+perm_unchanged:
 	return 1;
 }
 
