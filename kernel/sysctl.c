@@ -110,6 +110,10 @@ extern char core_pattern[];
 extern unsigned int core_pipe_limit;
 #endif
 extern int pid_max;
+/* KernelBumi sched externs */
+extern bool big_task_rotation_enable;
+extern unsigned int sysctl_sched_pelt_multiplier;
+extern int sched_pelt_multiplier(struct ctl_table *, int, void *, size_t *, loff_t *);
 extern int extra_free_kbytes;
 extern int pid_max_min, pid_max_max;
 extern int percpu_pagelist_fraction;
