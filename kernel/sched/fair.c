@@ -3856,11 +3856,14 @@ util_est_dequeue(struct cfs_rq *cfs_rq, struct task_struct *p, bool task_sleep)
 	}
 
 	/*
-	 * Skip update of task's estimated utilization when its EWMA is
-	 * already ~1% close to its last activation value.
+	 * Skip update only when EWMA is close to enqueued AND ewma <= enqueued
+	 * (i.e. we are not over-estimating). When ewma > enqueued we always
+	 * update to drain stale over-estimates quickly.
+	 * Backport of 5.5 util_est convergence fix.
 	 */
 	last_ewma_diff = ue.enqueued - ue.ewma;
-	if (within_margin(last_ewma_diff, (SCHED_CAPACITY_SCALE / 32)))
+	if (last_ewma_diff >= 0 &&
+	    within_margin(last_ewma_diff, (SCHED_CAPACITY_SCALE / 32)))
 		return;
 
 	/*
