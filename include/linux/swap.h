@@ -180,7 +180,7 @@ enum {
 	SWP_SCANNING	= (1 << 12),	/* refcount in scan_swap_map */
 };
 
-#define SWAP_CLUSTER_MAX 32UL
+#define SWAP_CLUSTER_MAX 64UL	/* KernelBumi: 64-page swap clusters */
 #define COMPACT_CLUSTER_MAX SWAP_CLUSTER_MAX
 
 #define SWAP_MAP_MAX	0x3e	/* Max duplication count, in first swap_map */
