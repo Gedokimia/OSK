@@ -101,9 +101,9 @@ jobs:
         run: |
           mkdir -p ${{ env.CLANG_DIR }}
           cd ${{ env.CLANG_DIR }}
-          wget -q https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/main-kernel-build-2023/clang-r498229b.tar.gz
-          tar -xzf clang-r498229b.tar.gz
-          rm clang-r498229b.tar.gz
+          wget -q https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/mirror-goog-main-llvm-toolchain-source/clang-r596125.tar.gz
+          tar -xzf clang-r596125.tar.gz
+          rm clang-r596125.tar.gz
       
       - name: Cache AnyKernel3
         id: cache-anykernel
