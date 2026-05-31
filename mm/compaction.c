@@ -1172,7 +1172,7 @@ static void isolate_freepages(struct compact_control *cc)
  * memory proactively. sysctl vm.compaction_proactiveness (0-100) controls
  * aggressiveness. 0 = disabled, 100 = always compact.
  */
-int sysctl_compaction_proactiveness = 20;
+int sysctl_compaction_proactiveness = 30; /* KernelBumi: more aggressive defrag */
 
 /*
  * fragmentation_score_zone - returns a zone's external fragmentation score
