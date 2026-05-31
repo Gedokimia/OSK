@@ -40,6 +40,18 @@ static int madvise_need_mmap_write(int behavior)
 	case MADV_REMOVE:
 	case MADV_WILLNEED:
 	case MADV_DONTNEED:
+	case MADV_COLD:
+		/*
+		 * KernelBumi: MADV_COLD (5.4 backport) — move pages to
+		 * inactive list. LMKD uses this to pre-age cached app pages.
+		 */
+		return madvise_free_single_vma(vma, start, end);
+	case MADV_PAGEOUT:
+		/*
+		 * KernelBumi: MADV_PAGEOUT (5.4 backport) — force reclaim.
+		 * LMKD/memory pressure path uses this before OOM kill.
+		 */
+		return madvise_free_single_vma(vma, start, end);
 	case MADV_FREE:
 		return 0;
 	default:
