@@ -918,7 +918,7 @@ GED_ERROR ged_dvfs_um_commit(unsigned long gpu_tar_freq, bool bFallback)
 }
 
 #ifdef GED_ENABLE_FB_DVFS
-#define DEFAULT_DVFS_MARGIN 100 /* 10% margin */
+#define DEFAULT_DVFS_MARGIN 160 /* KernelBumi: 16% margin, stutter reduction */
 #define FIXED_FPS_MARGIN 3 /* Fixed FPS margin: 3fps */
 
 int gx_fb_dvfs_margin = DEFAULT_DVFS_MARGIN;/* 10-bias */
@@ -954,7 +954,7 @@ static int dvfs_margin_value = DEFAULT_DVFS_MARGIN/10;
 unsigned int dvfs_margin_mode = CONFIGURE_MARGIN_MODE;
 
 static int dvfs_min_margin_inc_step = MIN_MARGIN_INC_STEP;
-static int dvfs_margin_low_bound = 1; /* 1% headroom */
+static int dvfs_margin_low_bound = 2; /* KernelBumi: 2% minimum headroom */
 #endif
 
 module_param(gx_fb_dvfs_margin, int, 0644);
