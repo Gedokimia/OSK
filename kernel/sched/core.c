@@ -60,7 +60,7 @@ const_debug unsigned int sysctl_sched_nr_migrate = 8;	/* EAS: fewer migrations p
  * period over which we measure -rt task CPU usage in us.
  * default: 1s
  */
-unsigned int sysctl_sched_rt_period = 1000000;
+unsigned int sysctl_sched_rt_period = 5000000; /* KernelBumi: 5s period, less throttle overhead */
 
 __read_mostly int scheduler_running;
 
@@ -68,7 +68,7 @@ __read_mostly int scheduler_running;
  * part of the period that we allow rt tasks to run in us.
  * default: 0.95s
  */
-int sysctl_sched_rt_runtime = 950000;
+int sysctl_sched_rt_runtime = 4750000; /* KernelBumi: 4.75s runtime (95%), less preemption stall */
 
 /*
  * __task_rq_lock - lock the rq @p resides on.
