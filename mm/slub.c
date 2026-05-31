@@ -3268,8 +3268,8 @@ EXPORT_SYMBOL(kmem_cache_alloc_bulk);
  * take the list_lock.
  */
 static unsigned int slub_min_order;
-static unsigned int slub_max_order = PAGE_ALLOC_COSTLY_ORDER;
-static unsigned int slub_min_objects;
+static unsigned int slub_max_order = 1; /* KernelBumi: max order-1, less waste */
+static unsigned int slub_min_objects = 8; /* KernelBumi: 2GB, smaller slabs */
 
 /*
  * Calculate the order of allocation given an slab object size.
