@@ -112,6 +112,9 @@ DEFINE_SHOW_ATTRIBUTE(proc);
 #ifndef SZ_4M
 #define SZ_4M                               0x400000
 #endif
+#ifndef SZ_8M
+#define SZ_8M                               0x800000
+#endif
 
 #define FORBIDDEN_MMAP_FLAGS                (VM_WRITE)
 
@@ -5427,8 +5430,8 @@ static int binder_mmap(struct file *filp, struct vm_area_struct *vma)
 	if (proc->tsk != current->group_leader)
 		return -EINVAL;
 
-	if ((vma->vm_end - vma->vm_start) > SZ_4M)
-		vma->vm_end = vma->vm_start + SZ_4M;
+	if ((vma->vm_end - vma->vm_start) > SZ_8M)
+		vma->vm_end = vma->vm_start + SZ_8M; /* KernelBumi: 8MB Binder mmap */
 
 	binder_debug(BINDER_DEBUG_OPEN_CLOSE,
 		     "%s: %d %lx-%lx (%ld K) vma %lx pagep %lx\n",
