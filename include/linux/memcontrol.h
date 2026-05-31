@@ -324,7 +324,7 @@ struct mem_cgroup {
  * size of first charge trial. "32" comes from vmscan.c's magic value.
  * TODO: maybe necessary to use big numbers in big irons.
  */
-#define MEMCG_CHARGE_BATCH 32U
+#define MEMCG_CHARGE_BATCH 64U /* KernelBumi: 64-page batch, less reclaim overhead */
 
 extern struct mem_cgroup *root_mem_cgroup;
 
