@@ -95,7 +95,7 @@ unsigned long total_swapcache_pages(void)
 	return ret;
 }
 
-static atomic_t swapin_readahead_hits = ATOMIC_INIT(4);
+static atomic_t swapin_readahead_hits = ATOMIC_INIT(8); /* KernelBumi: larger VMA RA window */
 
 void show_swap_cache_info(void)
 {
