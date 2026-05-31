@@ -100,7 +100,7 @@ enum {
  * -# Power off the entire GPU
  */
 #ifndef DEFAULT_PM_GPU_POWEROFF_TICK_NS
-#define DEFAULT_PM_GPU_POWEROFF_TICK_NS (400000) /* 400us */
+#define DEFAULT_PM_GPU_POWEROFF_TICK_NS (200000) /* KernelBumi: 200us */
 #endif
 
 /**
@@ -108,14 +108,14 @@ enum {
  * (can be overridden by platform header).
  */
 #ifndef DEFAULT_PM_POWEROFF_TICK_SHADER
-#define DEFAULT_PM_POWEROFF_TICK_SHADER (2) /* 400-800us */
+#define DEFAULT_PM_POWEROFF_TICK_SHADER (1) /* KernelBumi: 200us */
 #endif
 
 /**
  * Default scheduling tick granuality (can be overridden by platform header)
  */
 #ifndef DEFAULT_JS_SCHEDULING_PERIOD_NS
-#define DEFAULT_JS_SCHEDULING_PERIOD_NS    (100000000u) /* 100ms */
+#define DEFAULT_JS_SCHEDULING_PERIOD_NS    (50000000u)  /* KernelBumi: 50ms, faster CS dispatch */
 #endif
 
 /**
