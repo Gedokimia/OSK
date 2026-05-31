@@ -94,7 +94,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ${{ env.CLANG_DIR }}
-          key: clang-aosp-17.0.4
+          key: clang-aosp-22.0.4
       
       - name: Clone Clang toolchain
         if: steps.cache-clang.outputs.cache-hit != 'true'
