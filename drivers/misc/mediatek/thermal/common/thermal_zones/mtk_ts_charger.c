@@ -44,7 +44,7 @@ static DEFINE_SEMAPHORE(sem_mutex);
 
 static int kernelmode;
 /* C3T code for HQ-223914 by liunianliang at 2022/08/03 start */
-static unsigned int interval = 2; /* seconds, 0 : no auto polling */
+static unsigned int interval = 1; /* KernelBumi: 1s poll, faster response */
 static int num_trip = 1;
 /* C3T code for HQ-223914 by liunianliang at 2022/08/03 end */
 static int trip_temp[10] = { 120000, 110000, 100000, 90000, 80000,
@@ -82,8 +82,8 @@ static unsigned long prev_temp = 30000;
  *	use interval*polling_factor1
  * else, use interval*polling_factor2
  */
-static int polling_trip_temp1 = 40000;
-static int polling_trip_temp2 = 20000;
+static int polling_trip_temp1 = 45000; /* KernelBumi: light heat +5°C */
+static int polling_trip_temp2 = 25000; /* KernelBumi: medium heat boundary */
 static int polling_factor1 = 5000;
 static int polling_factor2 = 10000;
 static int charger_type;
