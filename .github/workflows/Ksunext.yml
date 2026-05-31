@@ -1,4 +1,4 @@
-name: KernelBuildKSUN
+name: ∆ Kernel KSUN
 
 on:
   workflow_dispatch:
@@ -53,25 +53,20 @@ jobs:
       - name: Setup ZRAM swap
         run: |
           echo "Setting up ZRAM swap..."
-          
-          # Check current memory
           echo "Current memory:"
           free -h
           
-          # Try ZRAM first
           if lsmod | grep -q zram || sudo modprobe zram 2>/dev/null; then
             echo "Setting up ZRAM..."
-            sudo zramctl --find --size 8G || \
-            sudo bash -c 'echo 1 > /sys/block/zram0/reset 2>/dev/null; echo 8G > /sys/block/zram0/disksize 2>/dev/null'
+            sudo zramctl --find --size 8G || sudo bash -c 'echo 1 > /sys/block/zram0/reset 2>/dev/null; echo 8G > /sys/block/zram0/disksize 2>/dev/null'
             sudo mkswap /dev/zram0 2>/dev/null
             sudo swapon /dev/zram0 2>/dev/null
             
             if swapon --show | grep -q zram; then
-              echo "✅ ZRAM swap enabled"
+              echo "ZRAM swap enabled"
             fi
           fi
           
-          # Fallback to regular swap
           if ! swapon --show | grep -q .; then
             echo "ZRAM not available, trying regular swap..."
             for SWAP_PATH in /mnt/swapfile /tmp/swapfile /swapfile; do
@@ -81,7 +76,7 @@ jobs:
                 sudo chmod 600 ${SWAP_PATH}
                 sudo mkswap ${SWAP_PATH} 2>/dev/null
                 if sudo swapon ${SWAP_PATH} 2>/dev/null; then
-                  echo "✅ Regular swap enabled at ${SWAP_PATH}"
+                  echo "Regular swap enabled at ${SWAP_PATH}"
                   break
                 fi
               fi
@@ -107,7 +102,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ${{ env.CLANG_DIR }}
-          key: aosp-clang-r596125-v2
+          key: aosp-clang-r596125-v3
       
       - name: Download and setup AOSP Clang r596125
         if: steps.cache-clang.outputs.cache-hit != 'true'
@@ -122,7 +117,7 @@ jobs:
             -O clang-r596125.tar.gz
           
           if [ ! -f clang-r596125.tar.gz ] || [ ! -s clang-r596125.tar.gz ]; then
-            echo "❌ Download failed!"
+            echo "Download failed!"
             exit 1
           fi
           
@@ -130,7 +125,6 @@ jobs:
           tar -xzf clang-r596125.tar.gz
           rm clang-r596125.tar.gz
           
-          # Fix directory structure if needed
           if [ -d "clang-r596125" ]; then
             mv clang-r596125/* .
             rm -rf clang-r596125
@@ -138,10 +132,10 @@ jobs:
           
           echo "Verifying Clang..."
           if [ -f "./bin/clang" ]; then
-            echo "✅ Clang ready"
+            echo "Clang ready"
             ./bin/clang --version
           else
-            echo "❌ Clang binary not found!"
+            echo "Clang binary not found!"
             exit 1
           fi
       
@@ -164,62 +158,64 @@ jobs:
         run: |
           echo "Setting up KernelSU-Next with SUSFS..."
           
-          # Download and run the setup script
           curl -LSs "https://github.com/KernelSU-Next/KernelSU-Next/raw/refs/heads/legacy-susfs/kernel/setup.sh" | bash -
           
-          # Check if setup succeeded
-          if [ $? -eq 0 ]; then
-            echo "✅ KernelSU-Next SUSFS setup complete"
+          SETUP_EXIT=$?
+          
+          if [ $SETUP_EXIT -eq 0 ] && [ -f "drivers/kernelsu/Kconfig" ]; then
+            echo "KernelSU-Next SUSFS setup successful"
           else
-            echo "❌ KernelSU-Next setup failed!"
+            echo "Setup script failed or incomplete, trying manual setup..."
             
-            # Check what's missing
-            if [ ! -f "drivers/kernelsu/Kconfig" ]; then
-              echo "Attempting manual setup..."
+            rm -rf drivers/kernelsu 2>/dev/null
+            rm -rf drivers/kernelsu_temp 2>/dev/null
+            
+            git clone --depth=1 --branch legacy-susfs \
+              https://github.com/KernelSU-Next/KernelSU-Next.git \
+              drivers/kernelsu_temp
+            
+            if [ -d "drivers/kernelsu_temp/kernel" ]; then
+              mkdir -p drivers/kernelsu
+              cp -r drivers/kernelsu_temp/kernel/* drivers/kernelsu/
+              rm -rf drivers/kernelsu_temp
               
-              # Remove empty directory
-              rm -rf drivers/kernelsu 2>/dev/null
-              
-              # Clone KernelSU-Next legacy-susfs branch
-              git clone --depth=1 --branch legacy-susfs \
-                https://github.com/KernelSU-Next/KernelSU-Next.git \
-                drivers/kernelsu_temp
-              
-              if [ -d "drivers/kernelsu_temp/kernel" ]; then
-                # Move kernel files to correct location
+              if [ -f "drivers/kernelsu/Kconfig" ]; then
+                echo "Manual setup successful"
+              else
+                echo "Creating minimal Kconfig..."
                 mkdir -p drivers/kernelsu
-                cp -r drivers/kernelsu_temp/kernel/* drivers/kernelsu/
-                rm -rf drivers/kernelsu_temp
-                
-                # Verify Kconfig exists
-                if [ -f "drivers/kernelsu/Kconfig" ]; then
-                  echo "✅ Manual KernelSU setup complete"
-                else
-                  echo "⚠️ Kconfig still missing, trying alternative..."
-                  # Create minimal Kconfig as last resort
-                  mkdir -p drivers/kernelsu
-                  cat > drivers/kernelsu/Kconfig << 'EOF'
-menu "KernelSU"
-config KSU
-	bool "KernelSU"
-	default y
-	help
-	  KernelSU-Next with SUSFS support.
-endmenu
-EOF
-                fi
+                echo 'menu "KernelSU"' > drivers/kernelsu/Kconfig
+                echo "" >> drivers/kernelsu/Kconfig
+                echo "config KSU" >> drivers/kernelsu/Kconfig
+                echo '  bool "KernelSU"' >> drivers/kernelsu/Kconfig
+                echo "  default y" >> drivers/kernelsu/Kconfig
+                echo "  help" >> drivers/kernelsu/Kconfig
+                echo "    KernelSU-Next with SUSFS support." >> drivers/kernelsu/Kconfig
+                echo "" >> drivers/kernelsu/Kconfig
+                echo "endmenu" >> drivers/kernelsu/Kconfig
               fi
+            else
+              echo "Creating minimal Kconfig..."
+              mkdir -p drivers/kernelsu
+              echo 'menu "KernelSU"' > drivers/kernelsu/Kconfig
+              echo "" >> drivers/kernelsu/Kconfig
+              echo "config KSU" >> drivers/kernelsu/Kconfig
+              echo '  bool "KernelSU"' >> drivers/kernelsu/Kconfig
+              echo "  default y" >> drivers/kernelsu/Kconfig
+              echo "  help" >> drivers/kernelsu/Kconfig
+              echo "    KernelSU-Next with SUSFS support." >> drivers/kernelsu/Kconfig
+              echo "" >> drivers/kernelsu/Kconfig
+              echo "endmenu" >> drivers/kernelsu/Kconfig
             fi
           fi
           
-          # Verify setup
           echo "Checking KernelSU files:"
-          ls -la drivers/kernelsu/ 2>/dev/null || echo "⚠️ drivers/kernelsu/ not found"
+          ls -la drivers/kernelsu/ 2>/dev/null || echo "drivers/kernelsu/ not found"
           
           if [ -f "drivers/kernelsu/Kconfig" ]; then
-            echo "✅ KernelSU Kconfig present"
+            echo "KernelSU Kconfig present"
           else
-            echo "⚠️ KernelSU Kconfig missing, removing reference from drivers/Kconfig"
+            echo "KernelSU Kconfig missing, removing reference from drivers/Kconfig"
             sed -i '/kernelsu\/Kconfig/d' drivers/Kconfig 2>/dev/null || true
           fi
       
@@ -267,7 +263,6 @@ EOF
           echo "Compiler version:"
           clang --version
           
-          # Calculate safe job count
           TOTAL_MEM_MB=$(free -m | awk '/^Mem:/{print $2}')
           SWAP_MB=$(free -m | awk '/^Swap:/{print $2}')
           EFFECTIVE_MEM=$((TOTAL_MEM_MB + SWAP_MB))
@@ -285,17 +280,13 @@ EOF
           echo "Memory: ${TOTAL_MEM_MB}MB RAM + ${SWAP_MB}MB Swap = ${EFFECTIVE_MEM}MB"
           echo "Using ${JOBS} parallel jobs"
           
-          # Create output directory
           mkdir -p ${{ env.OUT_DIR }}
           
-          # Generate config
           echo "Generating config with defconfig: ${{ env.DEFCONFIG }}"
           make O=${{ env.OUT_DIR }} ARCH=${{ env.ARCH }} ${{ env.DEFCONFIG }}
           
-          # Record start time
           START=$(date +"%s")
           
-          # Build kernel
           echo "Starting kernel compilation..."
           make -j${JOBS} \
             O=${{ env.OUT_DIR }} \
@@ -326,29 +317,28 @@ EOF
           
           if [ $BUILD_EXIT -ne 0 ]; then
             echo "BUILD_SUCCESS=false" >> $GITHUB_ENV
-            echo "❌ Build failed with exit code: ${BUILD_EXIT}"
+            echo "Build failed with exit code: ${BUILD_EXIT}"
             exit 1
           fi
           
-          # Verify kernel image
           if [ -f "${{ env.OUT_DIR }}/arch/${{ env.ARCH }}/boot/Image.gz-dtb" ]; then
-            echo "✅ Found Image.gz-dtb"
+            echo "Found Image.gz-dtb"
             echo "KERNEL_IMAGE=Image.gz-dtb" >> $GITHUB_ENV
           elif [ -f "${{ env.OUT_DIR }}/arch/${{ env.ARCH }}/boot/Image.gz" ]; then
-            echo "✅ Found Image.gz"
+            echo "Found Image.gz"
             echo "KERNEL_IMAGE=Image.gz" >> $GITHUB_ENV
           elif [ -f "${{ env.OUT_DIR }}/arch/${{ env.ARCH }}/boot/Image" ]; then
-            echo "✅ Found Image"
+            echo "Found Image"
             echo "KERNEL_IMAGE=Image" >> $GITHUB_ENV
           else
             echo "BUILD_SUCCESS=false" >> $GITHUB_ENV
-            echo "❌ No kernel image found!"
+            echo "No kernel image found!"
             ls -la ${{ env.OUT_DIR }}/arch/${{ env.ARCH }}/boot/
             exit 1
           fi
           
           echo "BUILD_SUCCESS=true" >> $GITHUB_ENV
-          echo "✅ Build completed in ${MINUTES}m ${SECONDS}s"
+          echo "Build completed in ${MINUTES}m ${SECONDS}s"
       
       - name: Send Telegram notification (Build Failed)
         if: failure()
@@ -358,7 +348,7 @@ EOF
           token: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           format: html
           document: ${{ env.OUT_DIR }}/build.log
-          message: Build failed after ${{ env.BUILD_MINUTES }} minutes and ${{ env.BUILD_SECONDS }} seconds.
+          message: "Build failed after ${{ env.BUILD_MINUTES }} minutes and ${{ env.BUILD_SECONDS }} seconds."
       
       - name: Package kernel zip
         if: success()
