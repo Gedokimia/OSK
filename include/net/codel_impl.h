@@ -51,8 +51,8 @@
 
 static void codel_params_init(struct codel_params *params)
 {
-	params->interval = MS2TIME(100);
-	params->target = MS2TIME(5);
+	params->interval = MS2TIME(50);  /* KernelBumi: 50ms interval, faster AQM response */
+	params->target = MS2TIME(4);   /* KernelBumi: 4ms target, tighter for LTE gaming */
 	params->ce_threshold = CODEL_DISABLED_THRESHOLD;
 	params->ecn = false;
 }
