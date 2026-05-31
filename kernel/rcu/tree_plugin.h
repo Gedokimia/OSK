@@ -61,7 +61,7 @@ DEFINE_PER_CPU(char, rcu_cpu_has_work);
 
 #ifdef CONFIG_RCU_NOCB_CPU
 static cpumask_var_t rcu_nocb_mask; /* CPUs to have callbacks offloaded. */
-static bool __read_mostly rcu_nocb_poll;    /* Offload kthread are to poll. */
+static bool __read_mostly rcu_nocb_poll = true; /* KernelBumi: poll, avoid IPI wakeups */
 #endif /* #ifdef CONFIG_RCU_NOCB_CPU */
 
 /*
