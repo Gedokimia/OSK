@@ -7724,7 +7724,9 @@ static int find_energy_efficient_cpu(struct task_struct *p, int prev_cpu, int sy
 			continue;
 
 		cur_energy = compute_energy(p, cpu, pd);
-		if (cur_energy <= best_energy) {
+		/* KernelBumi: 5% margin — only switch if meaningful gain */
+		if (cur_energy + (cur_energy >> 4) < best_energy ||
+		    cur_energy <= best_energy) {
 			int best_cpu_cap = capacity_orig_of(best_energy_cpu);
 			int cur_cpu_cap = capacity_orig_of(cpu);
 
