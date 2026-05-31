@@ -6591,7 +6591,7 @@ static int select_idle_cpu(struct task_struct *p, struct sched_domain *sd, int t
 		if (span_avg > 4*avg_cost)
 			nr = div_u64(span_avg, avg_cost);
 		else
-			nr = 4;
+			nr = 8; /* KernelBumi: scan min 8 CPUs on MT6768 8-core */
 	}
 
 	time = local_clock();
