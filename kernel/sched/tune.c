@@ -130,7 +130,7 @@ static inline struct schedtune *parent_st(struct schedtune *st)
 struct schedtune
 root_schedtune = {
 	.boost	= 0,
-	.prefer_idle = 0,
+	.prefer_idle = 1, /* KernelBumi: wake to idle CPU */
 };
 
 /*
