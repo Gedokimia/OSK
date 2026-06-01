@@ -200,10 +200,10 @@ enum {
 #define CP_RESIZE 	0x00000080
 
 #define MAX_DISCARD_BLOCKS(sbi)		BLKS_PER_SEC(sbi)
-#define DEF_MAX_DISCARD_REQUEST		8	/* issue 8 discards per round */
+#define DEF_MAX_DISCARD_REQUEST		16	/* KernelBumi: 16 discards/round */
 #define DEF_MIN_DISCARD_ISSUE_TIME	50	/* 50 ms, if exists */
 #define DEF_MID_DISCARD_ISSUE_TIME	500	/* 500 ms, if device busy */
-#define DEF_MAX_DISCARD_ISSUE_TIME	60000	/* 60 s, if no candidates */
+#define DEF_MAX_DISCARD_ISSUE_TIME	120000	/* KernelBumi: 120s idle interval */
 #define DEF_DISCARD_URGENT_UTIL		80	/* do more discard over 80% */
 #define DEF_CP_INTERVAL			300	/* KernelBumi: 5min, reduce eMMC checkpoint wear */
 #define DEF_IDLE_INTERVAL		5	/* 5 secs */
@@ -276,7 +276,7 @@ struct discard_entry {
 };
 
 /* default discard granularity of inner discard thread, unit: block count */
-#define DEFAULT_DISCARD_GRANULARITY		16
+#define DEFAULT_DISCARD_GRANULARITY		1	/* KernelBumi: single-block discard */
 
 /* max discard pend list number */
 #define MAX_PLIST_NUM		512
