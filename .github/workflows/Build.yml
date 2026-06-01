@@ -49,15 +49,64 @@ jobs:
             echo "DEFCONFIG=earth_defconfig" >> $GITHUB_ENV
           fi
       
-      - name: Setup swap space (prevent OOM)
+      - name: Setup ZRAM swap
         run: |
-          echo "Creating 8GB swap file..."
-          sudo fallocate -l 8G /swapfile
-          sudo chmod 600 /swapfile
-          sudo mkswap /swapfile
-          sudo swapon /swapfile
-          echo "Memory with swap:"
+          echo "Setting up ZRAM swap..."
+          
+          # Check current memory status
+          echo "Current memory:"
           free -h
+          
+          # Try ZRAM first (most reliable)
+          if lsmod | grep -q zram || sudo modprobe zram 2>/dev/null; then
+            echo "Setting up ZRAM..."
+            
+            # Configure ZRAM with 8GB
+            sudo zramctl --find --size 8G || \
+            sudo bash -c 'echo 1 > /sys/block/zram0/reset 2>/dev/null; echo 8G > /sys/block/zram0/disksize 2>/dev/null'
+            
+            # Create swap on ZRAM
+            sudo mkswap /dev/zram0 2>/dev/null
+            sudo swapon /dev/zram0 2>/dev/null
+            
+            if swapon --show | grep -q zram; then
+              echo "✅ ZRAM swap enabled"
+            fi
+          fi
+          
+          # Fallback to regular swap if ZRAM not available
+          if ! swapon --show | grep -q .; then
+            echo "ZRAM not available, trying regular swap..."
+            
+            for SWAP_PATH in /mnt/swapfile /tmp/swapfile /swapfile; do
+              echo "Trying ${SWAP_PATH}..."
+              sudo rm -f ${SWAP_PATH} 2>/dev/null
+              
+              if sudo dd if=/dev/zero of=${SWAP_PATH} bs=1M count=4096 status=none 2>/dev/null; then
+                sudo chmod 600 ${SWAP_PATH}
+                sudo mkswap ${SWAP_PATH} 2>/dev/null
+                
+                if sudo swapon ${SWAP_PATH} 2>/dev/null; then
+                  echo "✅ Regular swap enabled at ${SWAP_PATH}"
+                  break
+                fi
+              fi
+            done
+          fi
+          
+          # Final fallback: use dphys-swapfile
+          if ! swapon --show | grep -q .; then
+            echo "Trying dphys-swapfile..."
+            sudo apt-get install -y dphys-swapfile 2>/dev/null && {
+              sudo bash -c 'echo "CONF_SWAPSIZE=4096" > /etc/dphys-swapfile'
+              sudo dphys-swapfile setup 2>/dev/null
+              sudo dphys-swapfile swapon 2>/dev/null
+            }
+          fi
+          
+          echo "Final memory status:"
+          free -h
+          swapon --show 2>/dev/null || echo "No swap active (will use conservative build settings)"
       
       - name: Install system dependencies
         run: |
@@ -89,9 +138,9 @@ jobs:
             "https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/mirror-goog-main-llvm-toolchain-source/clang-r596125.tar.gz" \
             -O clang-r596125.tar.gz
           
-          # Check download
-          if [ ! -f clang-r596125.tar.gz ]; then
-            echo "❌ Download failed!"
+          # Check if download succeeded
+          if [ ! -f clang-r596125.tar.gz ] || [ ! -s clang-r596125.tar.gz ]; then
+            echo "❌ Download failed or file is empty!"
             exit 1
           fi
           
@@ -102,9 +151,7 @@ jobs:
           tar -xzf clang-r596125.tar.gz
           
           if [ $? -ne 0 ]; then
-            echo "❌ Extract failed! File might be corrupted"
-            file clang-r596125.tar.gz
-            head -c 100 clang-r596125.tar.gz | xxd
+            echo "❌ Extract failed!"
             exit 1
           fi
           
@@ -117,43 +164,43 @@ jobs:
             rm -rf clang-r596125
           fi
           
-          # Verify
-          echo "Verifying Clang installation..."
+          # Verify installation
+          echo "Verifying Clang..."
           if [ -f "./bin/clang" ]; then
             echo "✅ Clang binary found"
             ./bin/clang --version
           else
-            echo "❌ Clang binary not found in expected location"
+            echo "❌ Clang binary not found!"
             echo "Directory structure:"
-            find . -maxdepth 2 -type f -name "clang" 2>/dev/null
-            ls -la bin/ 2>/dev/null || echo "No bin directory"
+            ls -la
+            find . -name "clang" -type f 2>/dev/null | head -5
             exit 1
           fi
           
-          # Verify all required tools
+          # Check essential tools
           echo "Checking LLVM tools..."
           for tool in clang clang++ ld.lld llvm-ar llvm-as llvm-nm llvm-objcopy llvm-objdump llvm-strip; do
             if [ -f "./bin/${tool}" ]; then
               echo "✅ ${tool}"
             else
-              echo "⚠️ ${tool} not found"
+              echo "⚠️ ${tool} missing"
             fi
           done
       
-      - name: Get compiler info
+      - name: Get build info
         run: |
           export PATH="${{ env.CLANG_DIR }}/bin:${PATH}"
           
-          # Get compiler string
+          # Compiler info
           COMPILER_STRING=$(clang -v 2>&1 | head -n 1 | sed 's/(https..*//' | sed 's/ version//')
           echo "KBUILD_COMPILER_STRING=${COMPILER_STRING}" >> $GITHUB_ENV
           echo "Compiler: ${COMPILER_STRING}"
           
-          # Get kernel version
+          # Kernel version
           KERNEL_VERSION=$(make kernelversion 2>/dev/null || echo "unknown")
           echo "KERNEL_VERSION=${KERNEL_VERSION}" >> $GITHUB_ENV
           
-          # Get git info
+          # Git info
           echo "BRANCH=$(git rev-parse --abbrev-ref HEAD)" >> $GITHUB_ENV
           echo "COMMIT_MSG=$(git log --format='%s' -n 1)" >> $GITHUB_ENV
           echo "COMMIT_HASH=$(git log --format='%h' -n 1)" >> $GITHUB_ENV
@@ -204,19 +251,26 @@ jobs:
           export LOCALVERSION=""
           
           # Verify toolchain
-          echo "Using compiler:"
+          echo "Compiler version:"
           clang --version
-          echo "LD_LINKER: $(ld.lld --version 2>&1 | head -n1)"
           
-          # Calculate safe job count (conservative for 7GB RAM runner)
+          # Calculate safe job count based on available memory
           TOTAL_MEM_MB=$(free -m | awk '/^Mem:/{print $2}')
-          CORES=$(nproc --all)
-          JOBS_BY_MEM=$(( TOTAL_MEM_MB / 2048 ))
-          JOBS_BY_CPU=2
-          JOBS=$(( JOBS_BY_MEM < JOBS_BY_CPU ? JOBS_BY_MEM : JOBS_BY_CPU ))
-          [ $JOBS -lt 1 ] && JOBS=1
+          SWAP_MB=$(free -m | awk '/^Swap:/{print $2}')
+          EFFECTIVE_MEM=$((TOTAL_MEM_MB + SWAP_MB))
           
-          echo "System: ${CORES} cores, ${TOTAL_MEM_MB}MB RAM"
+          # Dynamic job calculation
+          if [ $EFFECTIVE_MEM -ge 12288 ]; then
+            JOBS=4  # 12GB+ effective memory
+          elif [ $EFFECTIVE_MEM -ge 8192 ]; then
+            JOBS=3  # 8-12GB
+          elif [ $EFFECTIVE_MEM -ge 6144 ]; then
+            JOBS=2  # 6-8GB
+          else
+            JOBS=1  # Less than 6GB
+          fi
+          
+          echo "Memory: ${TOTAL_MEM_MB}MB RAM + ${SWAP_MB}MB Swap = ${EFFECTIVE_MEM}MB effective"
           echo "Using ${JOBS} parallel jobs"
           
           # Create output directory
@@ -229,7 +283,7 @@ jobs:
           # Record start time
           START=$(date +"%s")
           
-          # Build kernel (exactly matching your script's parameters)
+          # Build kernel
           echo "Starting kernel compilation..."
           make -j${JOBS} \
             O=${{ env.OUT_DIR }} \
@@ -266,25 +320,24 @@ jobs:
             exit 1
           fi
           
-          # Verify kernel image exists
+          # Verify kernel image
           if [ -f "${{ env.OUT_DIR }}/arch/${{ env.ARCH }}/boot/Image.gz-dtb" ]; then
             echo "✅ Found Image.gz-dtb"
-            KERNEL_IMAGE="Image.gz-dtb"
+            echo "KERNEL_IMAGE=Image.gz-dtb" >> $GITHUB_ENV
           elif [ -f "${{ env.OUT_DIR }}/arch/${{ env.ARCH }}/boot/Image.gz" ]; then
             echo "✅ Found Image.gz"
-            KERNEL_IMAGE="Image.gz"
+            echo "KERNEL_IMAGE=Image.gz" >> $GITHUB_ENV
           elif [ -f "${{ env.OUT_DIR }}/arch/${{ env.ARCH }}/boot/Image" ]; then
             echo "✅ Found Image"
-            KERNEL_IMAGE="Image"
+            echo "KERNEL_IMAGE=Image" >> $GITHUB_ENV
           else
             echo "BUILD_SUCCESS=false" >> $GITHUB_ENV
             echo "❌ No kernel image found!"
-            echo "Contents of boot directory:"
+            echo "Boot directory contents:"
             ls -la ${{ env.OUT_DIR }}/arch/${{ env.ARCH }}/boot/
             exit 1
           fi
           
-          echo "KERNEL_IMAGE=${KERNEL_IMAGE}" >> $GITHUB_ENV
           echo "BUILD_SUCCESS=true" >> $GITHUB_ENV
           echo "✅ Build completed in ${MINUTES}m ${SECONDS}s"
       
@@ -296,8 +349,7 @@ jobs:
           token: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           format: html
           document: ${{ env.OUT_DIR }}/build.log
-          message: |
-            Build failed after ${{ env.BUILD_MINUTES }} minutes and ${{ env.BUILD_SECONDS }} seconds.
+          message: Build failed after ${{ env.BUILD_MINUTES }} minutes and ${{ env.BUILD_SECONDS }} seconds.
       
       - name: Package kernel zip
         if: success()
@@ -332,6 +384,7 @@ jobs:
           retention-days: 7
       
       - name: Upload build log artifact
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: build-log-${{ env.TIMESTAMP }}

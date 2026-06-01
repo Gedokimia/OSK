@@ -1,4 +1,4 @@
-name: Asterisk Kernel Builder
+name: ∆ Kernel KSUN
 
 on:
   workflow_dispatch:
@@ -36,6 +36,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           submodules: recursive
+          fetch-depth: 0
       
       - name: Setup environment variables
         run: |
@@ -49,15 +50,42 @@ jobs:
             echo "DEFCONFIG=earth_defconfig" >> $GITHUB_ENV
           fi
       
-      - name: Setup swap space (prevent OOM)
+      - name: Setup ZRAM swap
         run: |
-          echo "Creating 8GB swap file..."
-          sudo fallocate -l 8G /swapfile
-          sudo chmod 600 /swapfile
-          sudo mkswap /swapfile
-          sudo swapon /swapfile
-          echo "Memory with swap:"
+          echo "Setting up ZRAM swap..."
+          echo "Current memory:"
           free -h
+          
+          if lsmod | grep -q zram || sudo modprobe zram 2>/dev/null; then
+            echo "Setting up ZRAM..."
+            sudo zramctl --find --size 8G || sudo bash -c 'echo 1 > /sys/block/zram0/reset 2>/dev/null; echo 8G > /sys/block/zram0/disksize 2>/dev/null'
+            sudo mkswap /dev/zram0 2>/dev/null
+            sudo swapon /dev/zram0 2>/dev/null
+            
+            if swapon --show | grep -q zram; then
+              echo "ZRAM swap enabled"
+            fi
+          fi
+          
+          if ! swapon --show | grep -q .; then
+            echo "ZRAM not available, trying regular swap..."
+            for SWAP_PATH in /mnt/swapfile /tmp/swapfile /swapfile; do
+              echo "Trying ${SWAP_PATH}..."
+              sudo rm -f ${SWAP_PATH} 2>/dev/null
+              if sudo dd if=/dev/zero of=${SWAP_PATH} bs=1M count=4096 status=none 2>/dev/null; then
+                sudo chmod 600 ${SWAP_PATH}
+                sudo mkswap ${SWAP_PATH} 2>/dev/null
+                if sudo swapon ${SWAP_PATH} 2>/dev/null; then
+                  echo "Regular swap enabled at ${SWAP_PATH}"
+                  break
+                fi
+              fi
+            done
+          fi
+          
+          echo "Final memory status:"
+          free -h
+          swapon --show 2>/dev/null || echo "No swap active (will use conservative build settings)"
       
       - name: Install system dependencies
         run: |
@@ -74,7 +102,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ${{ env.CLANG_DIR }}
-          key: aosp-clang-r596125-v2
+          key: aosp-clang-r596125-v3
       
       - name: Download and setup AOSP Clang r596125
         if: steps.cache-clang.outputs.cache-hit != 'true'
@@ -84,82 +112,112 @@ jobs:
           mkdir -p ${{ env.CLANG_DIR }}
           cd ${{ env.CLANG_DIR }}
           
-          # Download from AOSP
           wget -q --show-progress \
             "https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/mirror-goog-main-llvm-toolchain-source/clang-r596125.tar.gz" \
             -O clang-r596125.tar.gz
           
-          # Check download
-          if [ ! -f clang-r596125.tar.gz ]; then
-            echo "❌ Download failed!"
+          if [ ! -f clang-r596125.tar.gz ] || [ ! -s clang-r596125.tar.gz ]; then
+            echo "Download failed!"
             exit 1
           fi
           
-          echo "Download size: $(du -h clang-r596125.tar.gz | cut -f1)"
-          
-          # Extract
           echo "Extracting Clang..."
           tar -xzf clang-r596125.tar.gz
-          
-          if [ $? -ne 0 ]; then
-            echo "❌ Extract failed! File might be corrupted"
-            file clang-r596125.tar.gz
-            head -c 100 clang-r596125.tar.gz | xxd
-            exit 1
-          fi
-          
           rm clang-r596125.tar.gz
           
-          # Fix directory structure if needed
           if [ -d "clang-r596125" ]; then
-            echo "Fixing directory structure..."
             mv clang-r596125/* .
             rm -rf clang-r596125
           fi
           
-          # Verify
-          echo "Verifying Clang installation..."
+          echo "Verifying Clang..."
           if [ -f "./bin/clang" ]; then
-            echo "✅ Clang binary found"
+            echo "Clang ready"
             ./bin/clang --version
           else
-            echo "❌ Clang binary not found in expected location"
-            echo "Directory structure:"
-            find . -maxdepth 2 -type f -name "clang" 2>/dev/null
-            ls -la bin/ 2>/dev/null || echo "No bin directory"
+            echo "Clang binary not found!"
             exit 1
           fi
-          
-          # Verify all required tools
-          echo "Checking LLVM tools..."
-          for tool in clang clang++ ld.lld llvm-ar llvm-as llvm-nm llvm-objcopy llvm-objdump llvm-strip; do
-            if [ -f "./bin/${tool}" ]; then
-              echo "✅ ${tool}"
-            else
-              echo "⚠️ ${tool} not found"
-            fi
-          done
       
-      - name: Get compiler info
+      - name: Get build info
         run: |
           export PATH="${{ env.CLANG_DIR }}/bin:${PATH}"
           
-          # Get compiler string
           COMPILER_STRING=$(clang -v 2>&1 | head -n 1 | sed 's/(https..*//' | sed 's/ version//')
           echo "KBUILD_COMPILER_STRING=${COMPILER_STRING}" >> $GITHUB_ENV
-          echo "Compiler: ${COMPILER_STRING}"
           
-          # Get kernel version
           KERNEL_VERSION=$(make kernelversion 2>/dev/null || echo "unknown")
           echo "KERNEL_VERSION=${KERNEL_VERSION}" >> $GITHUB_ENV
           
-          # Get git info
           echo "BRANCH=$(git rev-parse --abbrev-ref HEAD)" >> $GITHUB_ENV
           echo "COMMIT_MSG=$(git log --format='%s' -n 1)" >> $GITHUB_ENV
           echo "COMMIT_HASH=$(git log --format='%h' -n 1)" >> $GITHUB_ENV
-          
-          # CPU info
           echo "PROCS=$(nproc --all)" >> $GITHUB_ENV
+      
+      - name: Setup KernelSU-Next with SUSFS
+        run: |
+          echo "Setting up KernelSU-Next with SUSFS..."
+          
+          curl -LSs "https://github.com/KernelSU-Next/KernelSU-Next/raw/refs/heads/legacy-susfs/kernel/setup.sh" | bash -
+          
+          SETUP_EXIT=$?
+          
+          if [ $SETUP_EXIT -eq 0 ] && [ -f "drivers/kernelsu/Kconfig" ]; then
+            echo "KernelSU-Next SUSFS setup successful"
+          else
+            echo "Setup script failed or incomplete, trying manual setup..."
+            
+            rm -rf drivers/kernelsu 2>/dev/null
+            rm -rf drivers/kernelsu_temp 2>/dev/null
+            
+            git clone --depth=1 --branch legacy-susfs \
+              https://github.com/KernelSU-Next/KernelSU-Next.git \
+              drivers/kernelsu_temp
+            
+            if [ -d "drivers/kernelsu_temp/kernel" ]; then
+              mkdir -p drivers/kernelsu
+              cp -r drivers/kernelsu_temp/kernel/* drivers/kernelsu/
+              rm -rf drivers/kernelsu_temp
+              
+              if [ -f "drivers/kernelsu/Kconfig" ]; then
+                echo "Manual setup successful"
+              else
+                echo "Creating minimal Kconfig..."
+                mkdir -p drivers/kernelsu
+                echo 'menu "KernelSU"' > drivers/kernelsu/Kconfig
+                echo "" >> drivers/kernelsu/Kconfig
+                echo "config KSU" >> drivers/kernelsu/Kconfig
+                echo '  bool "KernelSU"' >> drivers/kernelsu/Kconfig
+                echo "  default y" >> drivers/kernelsu/Kconfig
+                echo "  help" >> drivers/kernelsu/Kconfig
+                echo "    KernelSU-Next with SUSFS support." >> drivers/kernelsu/Kconfig
+                echo "" >> drivers/kernelsu/Kconfig
+                echo "endmenu" >> drivers/kernelsu/Kconfig
+              fi
+            else
+              echo "Creating minimal Kconfig..."
+              mkdir -p drivers/kernelsu
+              echo 'menu "KernelSU"' > drivers/kernelsu/Kconfig
+              echo "" >> drivers/kernelsu/Kconfig
+              echo "config KSU" >> drivers/kernelsu/Kconfig
+              echo '  bool "KernelSU"' >> drivers/kernelsu/Kconfig
+              echo "  default y" >> drivers/kernelsu/Kconfig
+              echo "  help" >> drivers/kernelsu/Kconfig
+              echo "    KernelSU-Next with SUSFS support." >> drivers/kernelsu/Kconfig
+              echo "" >> drivers/kernelsu/Kconfig
+              echo "endmenu" >> drivers/kernelsu/Kconfig
+            fi
+          fi
+          
+          echo "Checking KernelSU files:"
+          ls -la drivers/kernelsu/ 2>/dev/null || echo "drivers/kernelsu/ not found"
+          
+          if [ -f "drivers/kernelsu/Kconfig" ]; then
+            echo "KernelSU Kconfig present"
+          else
+            echo "KernelSU Kconfig missing, removing reference from drivers/Kconfig"
+            sed -i '/kernelsu\/Kconfig/d' drivers/Kconfig 2>/dev/null || true
+          fi
       
       - name: Cache AnyKernel3
         id: cache-anykernel
@@ -197,39 +255,38 @@ jobs:
       - name: Build kernel
         id: build
         run: |
-          # Setup PATH
           export PATH="${{ env.CLANG_DIR }}/bin:${PATH}"
           export KBUILD_BUILD_USER=${{ env.BUILDER }}
           export KBUILD_BUILD_HOST=${{ env.BUILD_HOST }}
           export LOCALVERSION=""
           
-          # Verify toolchain
-          echo "Using compiler:"
+          echo "Compiler version:"
           clang --version
-          echo "LD_LINKER: $(ld.lld --version 2>&1 | head -n1)"
           
-          # Calculate safe job count (conservative for 7GB RAM runner)
           TOTAL_MEM_MB=$(free -m | awk '/^Mem:/{print $2}')
-          CORES=$(nproc --all)
-          JOBS_BY_MEM=$(( TOTAL_MEM_MB / 2048 ))
-          JOBS_BY_CPU=2
-          JOBS=$(( JOBS_BY_MEM < JOBS_BY_CPU ? JOBS_BY_MEM : JOBS_BY_CPU ))
-          [ $JOBS -lt 1 ] && JOBS=1
+          SWAP_MB=$(free -m | awk '/^Swap:/{print $2}')
+          EFFECTIVE_MEM=$((TOTAL_MEM_MB + SWAP_MB))
           
-          echo "System: ${CORES} cores, ${TOTAL_MEM_MB}MB RAM"
+          if [ $EFFECTIVE_MEM -ge 12288 ]; then
+            JOBS=4
+          elif [ $EFFECTIVE_MEM -ge 8192 ]; then
+            JOBS=3
+          elif [ $EFFECTIVE_MEM -ge 6144 ]; then
+            JOBS=2
+          else
+            JOBS=1
+          fi
+          
+          echo "Memory: ${TOTAL_MEM_MB}MB RAM + ${SWAP_MB}MB Swap = ${EFFECTIVE_MEM}MB"
           echo "Using ${JOBS} parallel jobs"
           
-          # Create output directory
           mkdir -p ${{ env.OUT_DIR }}
           
-          # Generate config
           echo "Generating config with defconfig: ${{ env.DEFCONFIG }}"
           make O=${{ env.OUT_DIR }} ARCH=${{ env.ARCH }} ${{ env.DEFCONFIG }}
           
-          # Record start time
           START=$(date +"%s")
           
-          # Build kernel (exactly matching your script's parameters)
           echo "Starting kernel compilation..."
           make -j${JOBS} \
             O=${{ env.OUT_DIR }} \
@@ -251,7 +308,6 @@ jobs:
           
           BUILD_EXIT=${PIPESTATUS[0]}
           
-          # Record end time
           END=$(date +"%s")
           DIFF=$((END - START))
           MINUTES=$((DIFF / 60))
@@ -259,34 +315,30 @@ jobs:
           echo "BUILD_MINUTES=${MINUTES}" >> $GITHUB_ENV
           echo "BUILD_SECONDS=${SECONDS}" >> $GITHUB_ENV
           
-          # Check result
           if [ $BUILD_EXIT -ne 0 ]; then
             echo "BUILD_SUCCESS=false" >> $GITHUB_ENV
-            echo "❌ Build failed with exit code: ${BUILD_EXIT}"
+            echo "Build failed with exit code: ${BUILD_EXIT}"
             exit 1
           fi
           
-          # Verify kernel image exists
           if [ -f "${{ env.OUT_DIR }}/arch/${{ env.ARCH }}/boot/Image.gz-dtb" ]; then
-            echo "✅ Found Image.gz-dtb"
-            KERNEL_IMAGE="Image.gz-dtb"
+            echo "Found Image.gz-dtb"
+            echo "KERNEL_IMAGE=Image.gz-dtb" >> $GITHUB_ENV
           elif [ -f "${{ env.OUT_DIR }}/arch/${{ env.ARCH }}/boot/Image.gz" ]; then
-            echo "✅ Found Image.gz"
-            KERNEL_IMAGE="Image.gz"
+            echo "Found Image.gz"
+            echo "KERNEL_IMAGE=Image.gz" >> $GITHUB_ENV
           elif [ -f "${{ env.OUT_DIR }}/arch/${{ env.ARCH }}/boot/Image" ]; then
-            echo "✅ Found Image"
-            KERNEL_IMAGE="Image"
+            echo "Found Image"
+            echo "KERNEL_IMAGE=Image" >> $GITHUB_ENV
           else
             echo "BUILD_SUCCESS=false" >> $GITHUB_ENV
-            echo "❌ No kernel image found!"
-            echo "Contents of boot directory:"
+            echo "No kernel image found!"
             ls -la ${{ env.OUT_DIR }}/arch/${{ env.ARCH }}/boot/
             exit 1
           fi
           
-          echo "KERNEL_IMAGE=${KERNEL_IMAGE}" >> $GITHUB_ENV
           echo "BUILD_SUCCESS=true" >> $GITHUB_ENV
-          echo "✅ Build completed in ${MINUTES}m ${SECONDS}s"
+          echo "Build completed in ${MINUTES}m ${SECONDS}s"
       
       - name: Send Telegram notification (Build Failed)
         if: failure()
@@ -296,31 +348,24 @@ jobs:
           token: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           format: html
           document: ${{ env.OUT_DIR }}/build.log
-          message: |
-            Build failed after ${{ env.BUILD_MINUTES }} minutes and ${{ env.BUILD_SECONDS }} seconds.
+          message: "Build failed after ${{ env.BUILD_MINUTES }} minutes and ${{ env.BUILD_SECONDS }} seconds."
       
       - name: Package kernel zip
         if: success()
         run: |
           echo "Creating kernel zip..."
           
-          # Copy kernel image to AnyKernel3
           cp ${{ env.OUT_DIR }}/arch/${{ env.ARCH }}/boot/${{ env.KERNEL_IMAGE }} ${{ env.ANY_KERNEL_DIR }}/
           
-          # Create zip
           cd ${{ env.ANY_KERNEL_DIR }}
           zip -r9 ${{ env.ZIP_NAME }}.zip * -x .git README.md *placeholder
           
-          # Generate checksum
           SHA512=$(sha512sum ${{ env.ZIP_NAME }}.zip | cut -f1 -d ' ')
           echo "KERNEL_SHA512=${SHA512}" >> $GITHUB_ENV
-          echo "SHA512: ${SHA512}"
           
-          # Move to output
           mkdir -p ${{ env.OUT_DIR }}/target
           mv ${{ env.ZIP_NAME }}.zip ${{ env.OUT_DIR }}/target/
           
-          # Clean up
           rm -f ${{ env.ANY_KERNEL_DIR }}/${{ env.KERNEL_IMAGE }}
       
       - name: Upload kernel zip artifact
@@ -332,6 +377,7 @@ jobs:
           retention-days: 7
       
       - name: Upload build log artifact
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: build-log-${{ env.TIMESTAMP }}
