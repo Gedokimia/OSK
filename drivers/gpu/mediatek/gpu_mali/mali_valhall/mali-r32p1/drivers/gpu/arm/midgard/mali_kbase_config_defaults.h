@@ -124,12 +124,12 @@ enum {
  * This defines the time-slice for a job (which may be different from that of a
  * context)
  */
-#define DEFAULT_JS_SOFT_STOP_TICKS       (1) /* 100ms-200ms */
+#define DEFAULT_JS_SOFT_STOP_TICKS       (3) /* KernelBumi: 300ms, less stutter */
 
 /**
  * Default minimum number of scheduling ticks before CL jobs are soft-stopped.
  */
-#define DEFAULT_JS_SOFT_STOP_TICKS_CL    (1) /* 100ms-200ms */
+#define DEFAULT_JS_SOFT_STOP_TICKS_CL    (3) /* KernelBumi: 300ms */
 
 /**
  * Default minimum number of scheduling ticks before jobs are hard-stopped
