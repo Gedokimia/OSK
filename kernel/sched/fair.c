@@ -37,8 +37,8 @@
  *
  * (default: 6ms * (1 + ilog(ncpus)), units: nanoseconds)
  */
-unsigned int sysctl_sched_latency			= 4000000ULL;
-unsigned int normalized_sysctl_sched_latency		= 4000000ULL;
+unsigned int sysctl_sched_latency			= 3000000ULL; /* KernelBumi 4GB: 3ms */
+unsigned int normalized_sysctl_sched_latency		= 3000000ULL;
 
 /*
  * Enable/disable honoring sync flag in energy-aware wakeups.
