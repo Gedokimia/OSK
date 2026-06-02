@@ -115,7 +115,7 @@ enum {
  * Default scheduling tick granuality (can be overridden by platform header)
  */
 #ifndef DEFAULT_JS_SCHEDULING_PERIOD_NS
-#define DEFAULT_JS_SCHEDULING_PERIOD_NS    (25000000u)  /* KernelBumi: 25ms, faster CS dispatch */
+#define DEFAULT_JS_SCHEDULING_PERIOD_NS    (50000000u)  /* KernelBumi: 50ms, faster CS dispatch */
 #endif
 
 /**
