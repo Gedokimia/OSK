@@ -5955,7 +5955,7 @@ static int wake_wide(struct task_struct *p, int sibling_count_hint)
 	unsigned int slave = p->wakee_flips;
 	int llc_size = this_cpu_read(sd_llc_size);
 
-	if (sibling_count_hint >= llc_size + 4) /* KernelBumi: prefer affine on MT6768 */
+	if (sibling_count_hint >= llc_size)
 		return 1;
 
 	if (master < slave)
