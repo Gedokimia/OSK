@@ -321,9 +321,9 @@ compound_page_dtor * const compound_page_dtors[] = {
  * allocations below this point, only high priority ones. Automatically
  * tuned according to the amount of memory in the system.
  */
-int min_free_kbytes = 8192; /* KernelBumi: 8MB reserve for G85 2GB */
+int min_free_kbytes = 16384; /* KernelBumi: 16MB reserve for G85 4GB */
 int user_min_free_kbytes = -1;
-int watermark_scale_factor = 200; /* KernelBumi: 20% watermark gap, earlier kswapd */
+int watermark_scale_factor = 150; /* KernelBumi: 15% on 4GB, less aggressive */
 
 /*
  * Extra memory for the system to try freeing. Used to temporarily
