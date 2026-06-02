@@ -11002,8 +11002,7 @@ static void nohz_balancer_kick(struct rq *rq)
 	if (time_before(now, nohz.next_balance))
 		goto out;
 
-	if (rq->nr_running >= 4 || rq->misfit_task_load) {
-		/* KernelBumi: kick only when >=4 tasks or misfit, reduce LB IPIs */
+	if (rq->nr_running >= 2 || rq->misfit_task_load) {
 		flags = NOHZ_KICK_MASK;
 		goto out;
 	}
