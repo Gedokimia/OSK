@@ -3928,7 +3928,7 @@ static bool age_lruvec(struct lruvec *lruvec, struct scan_control *sc,
 }
 
 /* to protect the working set of the last N jiffies */
-static unsigned long lru_gen_min_ttl __read_mostly = 500; /* KernelBumi 4GB */ /* KernelBumi: 1s cold-page TTL */
+static unsigned long lru_gen_min_ttl __read_mostly = 1000; /* KernelBumi: 1s cold-page TTL */
 
 static void lru_gen_age_node(struct pglist_data *pgdat, struct scan_control *sc)
 {
