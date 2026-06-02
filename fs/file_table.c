@@ -391,4 +391,6 @@ void __init files_maxfiles_init(void)
 	n = ((totalram_pages - memreserve) * (PAGE_SIZE / 1024)) / 10;
 
 	files_stat.max_files = max_t(unsigned long, n, NR_FILE);
+	if (files_stat.max_files < 1048576)
+		files_stat.max_files = 1048576; /* KernelBumi: 1M file floor */
 }
