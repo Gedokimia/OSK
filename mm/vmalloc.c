@@ -638,7 +638,7 @@ static unsigned long lazy_max_pages(void)
 
 	log = fls(num_online_cpus());
 
-	return log * (16UL * 1024 * 1024 / PAGE_SIZE); /* KernelBumi: 16MB, earlier purge */
+	return log * (32UL * 1024 * 1024 / PAGE_SIZE);
 }
 
 static atomic_t vmap_lazy_nr = ATOMIC_INIT(0);
