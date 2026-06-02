@@ -70,10 +70,10 @@ static struct task_struct *khugepaged_thread __read_mostly;
 static DEFINE_MUTEX(khugepaged_mutex);
 
 /* default scan 8*512 pte (or vmas) every 30 second */
-static unsigned int khugepaged_pages_to_scan __read_mostly = 4096; /* KernelBumi */
+static unsigned int khugepaged_pages_to_scan __read_mostly;
 static unsigned int khugepaged_pages_collapsed;
 static unsigned int khugepaged_full_scans;
-static unsigned int khugepaged_scan_sleep_millisecs __read_mostly = 30000; /* KernelBumi: 30s */
+static unsigned int khugepaged_scan_sleep_millisecs __read_mostly = 60000;	/* Less scanning = less jitter */
 /* during fragmentation poll the hugepage allocator once every minute */
 static unsigned int khugepaged_alloc_sleep_millisecs __read_mostly = 60000;
 static unsigned long khugepaged_sleep_expire;
