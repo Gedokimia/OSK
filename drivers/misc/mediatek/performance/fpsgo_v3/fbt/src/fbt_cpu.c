@@ -161,7 +161,7 @@ int cluster_num;
 static struct list_head loading_list;
 static struct list_head blc_list;
 
-static int fbt_enable = 1; /* KernelBumi: FBT enabled at boot */
+static int fbt_enable;
 static int fbt_idleprefer_enable;
 static int bypass_flag;
 static int walt_enable;
