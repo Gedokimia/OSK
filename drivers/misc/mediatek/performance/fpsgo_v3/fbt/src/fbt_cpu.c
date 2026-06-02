@@ -3283,7 +3283,7 @@ int __init fbt_cpu_init(void)
 	floor_opp = 2;
 	loading_th = 0;
 	sampling_period_MS = 256;
-	rescue_enhance_f = 35; /* KernelBumi: bigger rescue for stutter prevention */
+	rescue_enhance_f = 25;
 	loading_adj_cnt = 30;
 	loading_debnc_cnt = 30;
 	loading_time_diff = TIME_2MS;
