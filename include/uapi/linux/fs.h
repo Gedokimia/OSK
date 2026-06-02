@@ -29,8 +29,8 @@
 
 /* Fixed constants first: */
 #undef NR_OPEN
-#define INR_OPEN_CUR 1024	/* Initial setting for nfile rlimits */
-#define INR_OPEN_MAX 4096	/* Hard limit for nfile rlimits */
+#define INR_OPEN_CUR 32768	/* KernelBumi: 32K FDs for game asset streaming */
+#define INR_OPEN_MAX 131072	/* KernelBumi: 128K FD hard limit */
 
 #define BLOCK_SIZE_BITS 10
 #define BLOCK_SIZE (1<<BLOCK_SIZE_BITS)
