@@ -676,7 +676,7 @@ static inline u64 bore_scale(u64 delta, struct sched_entity *se)
 	u64 penalty;
 	if (!entity_is_task(se)) return delta;
 	penalty = bore_calc_penalty(se->burst_time);
-	return delta + (delta * min_t(u64, penalty, 2ULL) >> 3); /* KernelBumi: cap=2, less game thread penalty */
+	return delta + (delta * min_t(u64, penalty, 3ULL) >> 3);
 }
 static inline u64 calc_delta_fair(u64 delta, struct sched_entity *se)
 {
