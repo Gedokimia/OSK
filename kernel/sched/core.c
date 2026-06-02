@@ -3382,13 +3382,7 @@ void wake_up_new_task(struct task_struct *p)
 	 */
 	p->recent_used_cpu = task_cpu(p);
 	rseq_migrate(p);
-	/* KernelBumi: fork on big cluster first — faster cold-start on 4GB */
-	{
-		int cpu = select_task_rq(p, task_cpu(p), SD_BALANCE_FORK, 0, 1);
-		if (capacity_orig_of(cpu) < capacity_orig_of(cpumask_first(cpu_online_mask)))
-			cpu = cpumask_first(cpu_online_mask); /* prefer big cluster */
-		__set_task_cpu(p, cpu);
-	}
+	__set_task_cpu(p, select_task_rq(p, task_cpu(p), SD_BALANCE_FORK, 0, 1));
 #endif
 	rq = __task_rq_lock(p, &rf);
 	update_rq_clock(rq);
