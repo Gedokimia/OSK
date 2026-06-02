@@ -1919,9 +1919,6 @@ static __latent_entropy struct task_struct *copy_process(
 #endif
 
 	p->default_timer_slack_ns = current->timer_slack_ns;
-	/* KernelBumi: RT tasks get zero timer slack for precise wakeup */
-	if (p->policy == SCHED_FIFO || p->policy == SCHED_RR)
-		p->timer_slack_ns = 0;
 
 #ifdef CONFIG_PSI
 	p->psi_flags = 0;
