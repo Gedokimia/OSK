@@ -289,7 +289,7 @@ void wb_wakeup_delayed(struct bdi_writeback *wb)
 /*
  * Initial write bandwidth: 100 MB/s
  */
-#define INIT_BW		(1000 << (20 - PAGE_SHIFT)) /* KernelBumi: 4MB/s eMMC init BW */
+#define INIT_BW		(100 << (20 - PAGE_SHIFT))
 
 static int wb_init(struct bdi_writeback *wb, struct backing_dev_info *bdi,
 		   int blkcg_id, gfp_t gfp)
