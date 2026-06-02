@@ -422,7 +422,7 @@ free_tag_set:
 }
 
 /* Set queue depth to get a reasonable value for q->nr_requests */
-#define MMC_QUEUE_DEPTH 128	/* KernelBumi: 2x depth for eMMC throughput */
+#define MMC_QUEUE_DEPTH 64
 
 static int mmc_mq_init(struct mmc_queue *mq, struct mmc_card *card,
 			 spinlock_t *lock)
