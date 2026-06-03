@@ -33,7 +33,7 @@
 vmalloc=400M slub_debug=OFZPU swiotlb=noforce \
 cgroup.memory=nosocket,nokmem \
 firmware_class.path=/vendor/firmware \
-page_owner=on loop.max_part=7";
+page_owner=off loop.max_part=7";
 		kaslr-seed = <0 0>;
 	};
 
@@ -77,31 +77,31 @@ page_owner=on loop.max_part=7";
 			opp-microvolt = <800000>;
 		};
 		opp9 {
-			opp-hz = /bits/ 64 <1275000000>;
+			opp-hz = /bits/ 64 <1325000000>;
 			opp-microvolt = <831250>;
 		};
 		opp10 {
-			opp-hz = /bits/ 64 <1325000000>;
+			opp-hz = /bits/ 64 <1500000000>;
 			opp-microvolt = <843750>;
 		};
 		opp11 {
-			opp-hz = /bits/ 64 <1375000000>;
+			opp-hz = /bits/ 64 <1645000000>;
 			opp-microvolt = <856250>;
 		};
 		opp12 {
-			opp-hz = /bits/ 64 <1450000000>;
+			opp-hz = /bits/ 64 <1750000000>;
 			opp-microvolt = <881250>;
 		};
 		opp13 {
-			opp-hz = /bits/ 64 <1500000000>;
+			opp-hz = /bits/ 64 <1812000000>;
 			opp-microvolt = <893750>;
 		};
 		opp14 {
-			opp-hz = /bits/ 64 <1625000000>;
+			opp-hz = /bits/ 64 <1916000000>;
 			opp-microvolt = <931250>;
 		};
 		opp15 {
-			opp-hz = /bits/ 64 <1700000000>;
+			opp-hz = /bits/ 64 <2000000000>;
 			opp-microvolt = <962500>;
 		};
 	};
@@ -110,35 +110,35 @@ page_owner=on loop.max_part=7";
 		compatible = "operating-points-v2";
 		opp-shared;
 		opp0 {
-			opp-hz = /bits/ 64 <850000000>;
+			opp-hz = /bits/ 64 <725000000>;
 			opp-microvolt = <675000>;
 		};
 		opp1 {
-			opp-hz = /bits/ 64 <909000000>;
+			opp-hz = /bits/ 64 <840000000>;
 			opp-microvolt = <700000>;
 		};
 		opp2 {
-			opp-hz = /bits/ 64 <998000000>;
+			opp-hz = /bits/ 64 <898000000>;
 			opp-microvolt = <731250>;
 		};
 		opp3 {
-			opp-hz = /bits/ 64 <1087000000>;
+			opp-hz = /bits/ 64 <985000000>;
 			opp-microvolt = <768750>;
 		};
 		opp4 {
-			opp-hz = /bits/ 64 <1176000000>;
+			opp-hz = /bits/ 64 <1042000000>;
 			opp-microvolt = <800000>;
 		};
 		opp5 {
-			opp-hz = /bits/ 64 <1295000000>;
+			opp-hz = /bits/ 64 <1129000000>;
 			opp-microvolt = <843750>;
 		};
 		opp6 {
-			opp-hz = /bits/ 64 <1354000000>;
+			opp-hz = /bits/ 64 <1274000000>;
 			opp-microvolt = <868750>;
 		};
 		opp7 {
-			opp-hz = /bits/ 64 <1443000000>;
+			opp-hz = /bits/ 64 <1418000000>;
 			opp-microvolt = <900000>;
 		};
 		opp8 {
@@ -150,27 +150,27 @@ page_owner=on loop.max_part=7";
 			opp-microvolt = <968750>;
 		};
 		opp10 {
-			opp-hz = /bits/ 64 <1710000000>;
+			opp-hz = /bits/ 64 <1719000000>;
 			opp-microvolt = <1000000>;
 		};
 		opp11 {
-			opp-hz = /bits/ 64 <1800000000>;
+			opp-hz = /bits/ 64 <1788000000>;
 			opp-microvolt = <1031250>;
 		};
 		opp12 {
-			opp-hz = /bits/ 64 <1850000000>;
+			opp-hz = /bits/ 64 <1903000000>;
 			opp-microvolt = <1050000>;
 		};
 		opp13 {
-			opp-hz = /bits/ 64 <1900000000>;
+			opp-hz = /bits/ 64 <1995000000>;
 			opp-microvolt = <1062500>;
 		};
 		opp14 {
-			opp-hz = /bits/ 64 <1950000000>;
+			opp-hz = /bits/ 64 <2087000000>;
 			opp-microvolt = <1075000>;
 		};
 		opp15 {
-			opp-hz = /bits/ 64 <2000000000>;
+			opp-hz = /bits/ 64 <2203000000>;
 			opp-microvolt = <1087500>;
 		};
 	};
@@ -185,7 +185,7 @@ page_owner=on loop.max_part=7";
 			compatible = "arm,cortex-a55";
 			reg = <0x0000>;
 			enable-method = "psci";
-			clock-frequency = <1701000000>;
+			clock-frequency = <2001000000>;
 			operating-points-v2 = <&cluster0_opp>;
 			dynamic-power-coefficient = <85>;
 			capacity-dmips-mhz = <495>;
@@ -198,7 +198,7 @@ page_owner=on loop.max_part=7";
 			compatible = "arm,cortex-a55";
 			reg = <0x0100>;
 			enable-method = "psci";
-			clock-frequency = <1701000000>;
+			clock-frequency = <2001000000>;
 			operating-points-v2 = <&cluster0_opp>;
 			dynamic-power-coefficient = <85>;
 			capacity-dmips-mhz = <495>;
@@ -211,7 +211,7 @@ page_owner=on loop.max_part=7";
 			compatible = "arm,cortex-a55";
 			reg = <0x0200>;
 			enable-method = "psci";
-			clock-frequency = <1701000000>;
+			clock-frequency = <2001000000>;
 			operating-points-v2 = <&cluster0_opp>;
 			dynamic-power-coefficient = <85>;
 			capacity-dmips-mhz = <495>;
@@ -224,7 +224,7 @@ page_owner=on loop.max_part=7";
 			compatible = "arm,cortex-a55";
 			reg = <0x0300>;
 			enable-method = "psci";
-			clock-frequency = <1701000000>;
+			clock-frequency = <2001000000>;
 			operating-points-v2 = <&cluster0_opp>;
 			dynamic-power-coefficient = <85>;
 			capacity-dmips-mhz = <495>;
@@ -237,7 +237,7 @@ page_owner=on loop.max_part=7";
 			compatible = "arm,cortex-a55";
 			reg = <0x0400>;
 			enable-method = "psci";
-			clock-frequency = <1701000000>;
+			clock-frequency = <2001000000>;
 			operating-points-v2 = <&cluster0_opp>;
 			dynamic-power-coefficient = <85>;
 			capacity-dmips-mhz = <495>;
@@ -250,7 +250,7 @@ page_owner=on loop.max_part=7";
 			compatible = "arm,cortex-a55";
 			reg = <0x0500>;
 			enable-method = "psci";
-			clock-frequency = <1701000000>;
+			clock-frequency = <2001000000>;
 			operating-points-v2 = <&cluster0_opp>;
 			dynamic-power-coefficient = <85>;
 			capacity-dmips-mhz = <495>;
@@ -263,7 +263,7 @@ page_owner=on loop.max_part=7";
 			compatible = "arm,cortex-a75";
 			reg = <0x0600>;
 			enable-method = "psci";
-			clock-frequency = <2171000000>;
+			clock-frequency = <2271000000>;
 			operating-points-v2 = <&cluster1_opp>;
 			dynamic-power-coefficient = <275>;
 			capacity-dmips-mhz = <1024>;
@@ -276,7 +276,7 @@ page_owner=on loop.max_part=7";
 			compatible = "arm,cortex-a75";
 			reg = <0x0700>;
 			enable-method = "psci";
-			clock-frequency = <2171000000>;
+			clock-frequency = <2271000000>;
 			operating-points-v2 = <&cluster1_opp>;
 			dynamic-power-coefficient = <275>;
 			capacity-dmips-mhz = <1024>;
