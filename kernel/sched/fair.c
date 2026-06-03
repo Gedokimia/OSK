@@ -3865,6 +3865,10 @@ util_est_dequeue(struct cfs_rq *cfs_rq, struct task_struct *p, bool task_sleep)
 	if (last_ewma_diff >= 0 &&
 	    within_margin(last_ewma_diff, (SCHED_CAPACITY_SCALE / 32)))
 		return;
+	/* KernelBumi/5.5: when over-estimating, halve decay threshold
+	 * so stale high util_est drains 2x faster during sleep */
+	if (last_ewma_diff < 0)
+		last_ewma_diff = last_ewma_diff / 2;
 
 	/*
 	 * To avoid overestimation of actual task utilization, skip updates if
@@ -5992,6 +5996,11 @@ wake_affine_idle(int this_cpu, int prev_cpu, int sync)
 	 * a cpufreq perspective, it's better to have higher utilisation
 	 * on one CPU.
 	 */
+	/* KernelBumi/5.10: prev_cpu idle in same LLC → return immediately,
+	 * avoids full idle-scan overhead for cache-warm task rewake */
+	if (available_idle_cpu(prev_cpu) && cpus_share_cache(this_cpu, prev_cpu) &&
+	    !cpu_isolated(prev_cpu))
+		return prev_cpu;
 	if (available_idle_cpu(this_cpu) && cpus_share_cache(this_cpu, prev_cpu))
 		return available_idle_cpu(prev_cpu) ? prev_cpu : this_cpu;
 
@@ -7710,10 +7719,21 @@ static int find_energy_efficient_cpu(struct task_struct *p, int prev_cpu, int sy
 		}
 
 	best_energy_cpu = prev_cpu;
-	if (cpumask_test_cpu(prev_cpu, &p->cpus_allowed))
+	/*
+	 * KernelBumi/5.9: if prev_cpu has enough spare capacity for this
+	 * task, return early without scanning all CPUs — reduces EAS overhead
+	 * under moderate load (battery savings + lower latency).
+	 */
+	if (cpumask_test_cpu(prev_cpu, &p->cpus_allowed)) {
+		unsigned long prev_spare = capacity_of(prev_cpu) - cpu_util(prev_cpu);
+		if (prev_spare > task_util_est(p) + (task_util_est(p) >> 2)) {
+			best_energy_cpu = prev_cpu;
+			goto unlock; /* KernelBumi/5.9: prev_cpu has enough spare */
+		}
 		prev_energy = best_energy = compute_energy(p, prev_cpu, pd);
-	else
+	} else {
 		prev_energy = best_energy = ULONG_MAX;
+	}
 
 	/* Select the best candidate energy-wise. */
 	for_each_cpu(cpu, candidates) {
@@ -8471,7 +8491,8 @@ static unsigned long __read_mostly max_load_balance_interval = HZ/10;
 enum fbq_type { regular, remote, all };
 
 enum group_type {
-	group_other = 0,
+	group_has_spare = 0, /* KernelBumi/5.14: spare capacity available */
+	group_other,
 	group_misfit_task,
 	group_imbalanced,
 	group_overloaded,
@@ -9451,6 +9472,11 @@ group_type group_classify(struct sched_group *group,
 
 	if (sgs->group_misfit_task_load)
 		return group_misfit_task;
+
+	/* KernelBumi/5.14: spare capacity classification
+	 * Helps LB identify under-utilized groups for battery savings */
+	if (sgs->group_capacity > sgs->group_util + SCHED_CAPACITY_SCALE / 4)
+		return group_has_spare;
 
 	return group_other;
 }
@@ -11324,6 +11350,10 @@ static void nohz_newidle_balance(struct rq *this_rq)
 
 	/* Will wake up very soon. No time for doing anything else*/
 	if (this_rq->avg_idle < sysctl_sched_migration_cost)
+		return;
+	/* KernelBumi/5.6: also skip when avg_idle < 2x sched_latency
+	 * avoids LB overhead when CPU will be busy shortly */
+	if (this_rq->avg_idle < (2 * sysctl_sched_latency))
 		return;
 
 	/* Don't need to update blocked load of idle CPUs*/
