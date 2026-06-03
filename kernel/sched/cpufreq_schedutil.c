@@ -590,6 +590,10 @@ static void sugov_update_single(struct update_util_data *hook, u64 time,
 	busy = false;
 #endif
 
+	/* KernelBumi/5.8: bypass rate limit when RT/DL task just stopped
+	 * running — allows freq to ramp down immediately for battery */
+	if (flags & (SCHED_CPUFREQ_RT_DL | SCHED_CPUFREQ_RT))
+		sg_policy->need_freq_update = true;
 	if (!sugov_should_update_freq(sg_policy, time)) {
 		raw_spin_unlock(&sg_policy->update_lock);
 		return;
