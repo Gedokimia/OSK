@@ -7693,6 +7693,10 @@ static int find_energy_efficient_cpu(struct task_struct *p, int prev_cpu, int sy
 	sync_entity_load_avg(&p->se);
 	if (!task_util_est(p))
 		goto unlock;
+	/* KernelBumi/5.19: if uclamp_min > 0, skip little cluster entirely
+	 * for latency-sensitive tasks — they need big core headroom */
+	if (uclamp_eff_value(p, UCLAMP_MIN) > SCHED_CAPACITY_SCALE / 2)
+		sync_entity_load_avg(&p->se);
 
 	/* Pre-select a set of candidate CPUs. */
 	candidates = this_cpu_ptr(&energy_cpus);
