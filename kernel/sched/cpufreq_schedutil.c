@@ -1093,8 +1093,9 @@ static int sugov_init(struct cpufreq_policy *policy)
 		goto stop_kthread;
 	}
 
-	tunables->up_rate_limit_us = 500;
-	tunables->down_rate_limit_us = 2000;
+	tunables->up_rate_limit_us = 200;   /* KernelBumi: 200us ramp-up */
+	tunables->down_rate_limit_us = 5000; /* KernelBumi: 5ms hysteresis */
+	sg_policy->need_freq_update = true;  /* KernelBumi: full freq on first tick */
 
 	policy->governor_data = sg_policy;
 	sg_policy->tunables = tunables;
