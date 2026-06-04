@@ -230,6 +230,9 @@ unsigned long oom_badness(struct task_struct *p, struct mem_cgroup *memcg,
 	 * the middle of vfork
 	 */
 	adj = (long)p->signal->oom_score_adj;
+	/* KernelBumi: sleeping tasks with high adj score higher (battery: kill idle sooner) */
+	if (p->state != TASK_RUNNING && adj > 500)
+		adj += 100;
 	if (adj == OOM_SCORE_ADJ_MIN ||
 			test_bit(MMF_OOM_SKIP, &p->mm->flags) ||
 			in_vfork(p)) {
