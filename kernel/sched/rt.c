@@ -843,7 +843,8 @@ static void balance_runtime(struct rt_rq *rt_rq)
 	if (!sched_feat(RT_RUNTIME_SHARE))
 		return;
 
-	if (rt_rq->rt_time > rt_rq->rt_runtime) {
+	/* KernelBumi/5.4: skip throttle if no RT tasks running */
+	if (rt_rq->rt_time > rt_rq->rt_runtime && rt_rq->rt_nr_running) {
 		raw_spin_unlock(&rt_rq->rt_runtime_lock);
 		do_balance_runtime(rt_rq);
 		raw_spin_lock(&rt_rq->rt_runtime_lock);
