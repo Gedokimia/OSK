@@ -1244,6 +1244,9 @@ throttle:
 		if (dl_runtime_exceeded(dl_se) &&
 		    (dl_se->flags & SCHED_FLAG_DL_OVERRUN))
 			dl_se->dl_overrun = 1;
+			/* KernelBumi/5.14: force resched after 64 consecutive overruns */
+			if (++dl_se->dl_overrun > 64)
+				resched_curr(rq);
 
 		__dequeue_task_dl(rq, curr, 0);
 		if (unlikely(dl_se->dl_boosted || !start_dl_timer(curr)))
