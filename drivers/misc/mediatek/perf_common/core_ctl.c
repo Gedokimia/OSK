@@ -105,7 +105,9 @@ static unsigned int default_min_cpus[MAX_CLUSTERS] = {4, 2, 0};
 
 static int arch_get_nr_clusters(void)
 {
-	return arch_nr_clusters();
+	int n = arch_nr_clusters();
+	/* KernelBumi: clamp to MAX_CLUSTERS to prevent OOB on init */
+	return clamp(n, 1, MAX_CLUSTERS - 1);
 }
 
 static void arch_get_cluster_cpus(struct cpumask *cpus, int cid)

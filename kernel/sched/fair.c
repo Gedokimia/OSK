@@ -9065,7 +9065,8 @@ static void update_cfs_rq_h_load(struct cfs_rq *cfs_rq)
 static unsigned long task_h_load(struct task_struct *p)
 {
 	/* KernelBumi/5.16: if h_load_next points to this entity, h_load is fresh */
-	if (p->se.cfs_rq && p->se.cfs_rq->h_load_next == &p->se)
+	if (p->se.cfs_rq && p->se.cfs_rq->h_load_next == &p->se &&
+	    p->se.cfs_rq->h_load > 0)
 		return p->se.avg.load_avg * p->se.cfs_rq->h_load /
 			max_t(unsigned long, p->se.cfs_rq->avg.load_avg, 1UL);
 
@@ -9102,7 +9103,8 @@ static inline void update_blocked_averages(int cpu)
 static unsigned long task_h_load(struct task_struct *p)
 {
 	/* KernelBumi/5.16: if h_load_next points to this entity, h_load is fresh */
-	if (p->se.cfs_rq && p->se.cfs_rq->h_load_next == &p->se)
+	if (p->se.cfs_rq && p->se.cfs_rq->h_load_next == &p->se &&
+	    p->se.cfs_rq->h_load > 0)
 		return p->se.avg.load_avg * p->se.cfs_rq->h_load /
 			max_t(unsigned long, p->se.cfs_rq->avg.load_avg, 1UL);
 
