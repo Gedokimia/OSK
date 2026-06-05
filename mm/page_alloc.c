@@ -323,7 +323,7 @@ compound_page_dtor * const compound_page_dtors[] = {
  */
 int min_free_kbytes = 8192; /* KernelBumi: 8MB reserve for G85 2GB */
 int user_min_free_kbytes = -1;
-int watermark_scale_factor = 200; /* KernelBumi: 20% watermark gap, earlier kswapd */
+int watermark_scale_factor = 150; /* KernelBumi 4GB: 15% stable watermark */
 
 /*
  * Extra memory for the system to try freeing. Used to temporarily
