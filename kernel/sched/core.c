@@ -593,6 +593,9 @@ static bool wake_up_full_nohz_cpu(int cpu)
  */
 void wake_up_nohz_cpu(int cpu)
 {
+	/* KernelBumi/5.7: skip IPI if CPU is not idle — saves cross-CPU overhead */
+	if (!idle_cpu(cpu) && !cpu_halted(cpu))
+		return;
 	if (!wake_up_full_nohz_cpu(cpu))
 		wake_up_idle_cpu(cpu);
 }
