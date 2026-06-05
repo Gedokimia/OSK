@@ -103,6 +103,7 @@
 
 /* Maximum number of nesting allowed inside epoll sets */
 #define EP_MAX_NESTS 4
+#define EP_IDLE_WAIT_MS 1 /* KernelBumi: min 1ms wait */
 
 #define EP_MAX_EVENTS (INT_MAX / sizeof(struct epoll_event))
 
