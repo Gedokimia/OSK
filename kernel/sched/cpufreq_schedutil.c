@@ -598,6 +598,14 @@ static void sugov_update_single(struct update_util_data *hook, u64 time,
 	util = sugov_get_util(sg_cpu);
 	max = sg_cpu->max;
 	util = sugov_iowait_apply(sg_cpu, time, util, max);
+	/* KernelBumi/5.15: micro-idle battery opt — if util < 5% and not RT,
+	 * bypass further computation and go to policy->min immediately */
+	if (util < (max >> 4) && !(flags & (SCHED_CPUFREQ_RT | SCHED_CPUFREQ_DL))) {
+		next_f = policy->min;
+		sugov_update_commit(sg_policy, time, next_f);
+		raw_spin_unlock(&sg_policy->update_lock);
+		return;
+	}
 #ifdef CONFIG_UCLAMP_TASK
 	trace_schedutil_uclamp_util(policy->cpu, util);
 #endif
