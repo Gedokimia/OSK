@@ -1741,6 +1741,9 @@ bool try_to_unmap(struct page *page, enum ttu_flags flags)
 		.done = page_not_mapped,
 		.anon_lock = page_lock_anon_vma_read,
 	};
+	/* KernelBumi/5.9: zero-mapped fast exit — already unmapped */
+	if (!page_mapcount(page))
+		return true;
 
 	/*
 	 * During exec, a temporary VMA is setup and later moved.
