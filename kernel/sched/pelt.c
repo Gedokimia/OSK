@@ -412,12 +412,6 @@ int update_irq_load_avg(struct rq *rq, u64 running)
 __read_mostly unsigned int sched_pelt_lshift = 2; /* default: multiplier=4, 8ms half-life */
 
 #ifdef CONFIG_SYSCTL
-/* KernelBumi: PELT multiplier profiles
- * 1 = 32ms (fast decay, low battery)
- * 2 = 64ms (balanced)
- * 4 = 128ms (gaming default — smooth util)
- * 8 = 256ms (heavy games, very smooth)
- */
 unsigned int sysctl_sched_pelt_multiplier = 4;
 
 int sched_pelt_multiplier(struct ctl_table *table, int write, void *buffer,
@@ -428,11 +422,6 @@ int sched_pelt_multiplier(struct ctl_table *table, int write, void *buffer,
 	int ret;
 
 	mutex_lock(&mutex);
-	/* KernelBumi: clamp to valid values */
-	if (val != 1 && val != 2 && val != 4 && val != 8) {
-		sysctl_sched_pelt_multiplier = old;
-		return -EINVAL;
-	}
 	old = sysctl_sched_pelt_multiplier;
 	ret = proc_dointvec(table, write, buffer, lenp, ppos);
 	if (ret)
