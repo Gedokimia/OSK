@@ -3761,7 +3761,9 @@ static inline unsigned long _task_util_est(struct task_struct *p)
 
 unsigned long task_util_est(struct task_struct *p)
 {
-	return max(task_util(p), _task_util_est(p));
+	/* KernelBumi/5.11: clamp util_est to cpu capacity scale */
+	return min_t(unsigned long, max(task_util(p), _task_util_est(p)),
+		     SCHED_CAPACITY_SCALE);
 }
 
 #ifdef CONFIG_UCLAMP_TASK
