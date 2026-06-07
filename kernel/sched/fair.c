@@ -3848,10 +3848,6 @@ util_est_dequeue(struct cfs_rq *cfs_rq, struct task_struct *p, bool task_sleep)
 	 * to smooth utilization decreases.
 	 */
 	ue.enqueued = (task_util(p) | UTIL_AVG_UNCHANGED);
-	/* KernelBumi/5.6: clamp util_est to uclamp_max on enqueue for accuracy */
-	if (static_branch_likely(&sched_uclamp_used))
-		ue.enqueued = min_t(unsigned int, ue.enqueued,
-				uclamp_eff_value(p, UCLAMP_MAX));
 	if (sched_feat(UTIL_EST_FASTUP)) {
 		if (ue.ewma < ue.enqueued) {
 			ue.ewma = ue.enqueued;
