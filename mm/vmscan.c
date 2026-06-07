@@ -5820,7 +5820,8 @@ retry:
 		 * If we're getting trouble reclaiming, start doing
 		 * writepage even in laptop mode.
 		 */
-		if (sc->priority < DEF_PRIORITY - 2)
+		/* KernelBumi/5.10: delay writeback further for battery */
+		if (sc->priority < DEF_PRIORITY - 4)
 			sc->may_writepage = 1;
 	} while (--sc->priority >= 0);
 
