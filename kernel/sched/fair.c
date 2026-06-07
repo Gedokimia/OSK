@@ -7751,10 +7751,6 @@ static int find_energy_efficient_cpu(struct task_struct *p, int prev_cpu, int sy
 		if (cpu_isolated(cpu))
 			continue;
 
-		/* KernelBumi/5.13: skip heavily throttled CPUs in EAS */
-		if (arch_scale_thermal_pressure(cpu) > (SCHED_CAPACITY_SCALE >> 2))
-			continue;
-
 		cur_energy = compute_energy(p, cpu, pd);
 		if (cur_energy <= best_energy) {
 			int best_cpu_cap = capacity_orig_of(best_energy_cpu);
