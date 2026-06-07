@@ -5390,7 +5390,9 @@ static inline bool cpu_overutilized(int cpu)
 	if (overutilized != -1)
 		return overutilized;
 #endif
-	return (capacity_of(cpu) * 1024) < (cpu_util(cpu) * capacity_margin);
+	/* KernelBumi/5.12: use thermal-adjusted capacity for overutil check */
+	return capacity_of(cpu) * SCHED_CAPACITY_SCALE <
+	       cpu_util_cfs(cpu_rq(cpu)) * capacity_margin;
 }
 
 static inline void update_overutilized_status(struct rq *rq)
