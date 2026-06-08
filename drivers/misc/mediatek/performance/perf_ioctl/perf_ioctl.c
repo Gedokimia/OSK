@@ -9,6 +9,10 @@
 #include "io_ctrl.h"
 #endif
 
+#ifdef CONFIG_OAKS
+#include "../../../../kernel/sched/oaks.h"
+#endif
+
 #define TAG "PERF_IOCTL"
 
 void (*fpsgo_notify_qudeq_fp)(int qudeq,
@@ -166,9 +170,17 @@ static long eara_ioctl_impl(struct file *filp,
 	switch (cmd) {
 	case EARA_NN_BEGIN:
 		perfctl_notify_fpsgo_nn_begin(msgKM, msgUM);
+#ifdef CONFIG_OAKS
+		/* OAKS: activate PERF context when game/NN workload begins */
+		oaks_notify_perf_scene(current->tgid, current->pid, true);
+#endif
 		break;
 	case EARA_NN_END:
 		perfctl_notify_fpsgo_nn_end(msgKM, msgUM);
+#ifdef CONFIG_OAKS
+		/* OAKS: return to BALANCED when game/NN workload ends */
+		oaks_notify_perf_scene(0, 0, false);
+#endif
 		break;
 	case EARA_GETUSAGE:
 		msgKM->bw_usage = 0;
