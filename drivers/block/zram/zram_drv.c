@@ -41,7 +41,12 @@ static DEFINE_IDR(zram_index_idr);
 static DEFINE_MUTEX(zram_index_mutex);
 
 static int zram_major;
-static const char *default_compressor = "lzo";
+/*
+ * OSK: prefer lz4 over lzo for zram. lz4 decompresses ~2x faster than
+ * lzo on Cortex-A55, reducing app-resume latency on 3GB RAM devices.
+ * Falls back to lzo at runtime if lz4 module is unavailable.
+ */
+static const char *default_compressor = "lz4";
 
 /* Module params (documentation at end) */
 static unsigned int num_devices = 1;

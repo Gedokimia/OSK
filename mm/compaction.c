@@ -24,6 +24,9 @@
 #include <linux/page_owner.h>
 #include <linux/psi.h>
 #include "internal.h"
+#ifdef CONFIG_OAKS
+#include "../kernel/sched/oaks.h"
+#endif
 
 #ifdef CONFIG_COMPACTION
 static inline void count_compact_event(enum vm_event_item item)
@@ -1988,6 +1991,17 @@ static void kcompactd_do_work(pg_data_t *pgdat)
 	 * With no special task, compact all zones so that a page of requested
 	 * order is allocatable.
 	 */
+#ifdef CONFIG_OAKS
+	/*
+	 * OSK: suppress background compaction during PERF (gaming) context.
+	 * kcompactd scanning large memory causes microsecond-range stalls on
+	 * the render thread when page table locks are contended. Defer to
+	 * the next idle window. Direct compaction on allocation failure always
+	 * proceeds normally regardless of OAKS context.
+	 */
+	if (oaks_in_perf())
+		return;
+#endif
 	int zoneid;
 	struct zone *zone;
 	struct compact_control cc = {
