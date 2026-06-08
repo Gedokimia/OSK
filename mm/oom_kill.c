@@ -54,6 +54,9 @@
 #include <asm/tlb.h>
 #include "internal.h"
 #include "slab.h"
+#ifdef CONFIG_OAKS
+#include "../kernel/sched/oaks.h"
+#endif
 
 #define CREATE_TRACE_POINTS
 #include <trace/events/oom.h>
@@ -230,8 +233,25 @@ unsigned long oom_badness(struct task_struct *p, struct mem_cgroup *memcg,
 	 * the middle of vfork
 	 */
 	adj = (long)p->signal->oom_score_adj;
-	/* KernelBumi: sleeping tasks with high adj score higher (battery: kill idle sooner) */
-	if (p->state != TASK_RUNNING && adj > 500)
+#ifdef CONFIG_OAKS
+	/*
+	 * OAKS: protect game main/render threads during PERF context.
+	 * Prevents mid-game OOM kills when background services consume RAM.
+	 */
+	if (oaks_oom_guard(p)) {
+		task_unlock(p);
+		return 0;
+	}
+#endif
+	/*
+	 * OSK launcher fix: only apply sleeping-task bias to adj >= 700
+	 * (safely cached-background range). The original threshold of > 500
+	 * caused the HyperOS launcher (com.miui.home2) to be killed first
+	 * when it transiently hit adj=501 during BufferQueue frame composition.
+	 * Android adj reference: 0=fg 200=visible 500=perceptible
+	 *                        700=cached_bg 900=cached_empty 1000=expendable
+	 */
+	if (p->state != TASK_RUNNING && adj >= 700)
 		adj += 100;
 	if (adj == OOM_SCORE_ADJ_MIN ||
 			test_bit(MMF_OOM_SKIP, &p->mm->flags) ||

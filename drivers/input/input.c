@@ -28,6 +28,9 @@
 #include <linux/mutex.h>
 #include <linux/rcupdate.h>
 #include "input-compat.h"
+#ifdef CONFIG_OAKS
+#include "../kernel/sched/oaks.h"
+#endif
 
 MODULE_AUTHOR("Vojtech Pavlik <vojtech@suse.cz>");
 MODULE_DESCRIPTION("Input core");
@@ -382,6 +385,12 @@ static void input_handle_event(struct input_dev *dev,
 			       unsigned int type, unsigned int code, int value)
 {
 	int disposition = input_get_disposition(dev, type, code, &value);
+
+#ifdef CONFIG_OAKS
+	/* OAKS: activate RESPONSIVE context on touch/key events */
+	if (type == EV_ABS || (type == EV_KEY && code == BTN_TOUCH))
+		oaks_notify_touch();
+#endif
 
 	if (disposition != INPUT_IGNORE_EVENT && type != EV_SYN)
 		add_input_randomness(type, code, value);
