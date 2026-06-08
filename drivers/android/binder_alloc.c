@@ -434,11 +434,34 @@ static struct binder_buffer *binder_alloc_new_buf_locked(
 	/* Pad 0-size buffers so they get assigned unique addresses */
 	size = max(size, sizeof(void *));
 
-	if (is_async && alloc->free_async_space < size) {
-		binder_alloc_debug(BINDER_DEBUG_BUFFER_ALLOC,
-			     "%d: binder_alloc_buf size %zd failed, no async space left\n",
-			      alloc->pid, size);
-		return ERR_PTR(-ENOSPC);
+	if (is_async) {
+		size_t total_alloc = 0;
+		size_t async_threshold;
+		struct rb_node *tmp;
+
+		/*
+		 * OSK/5.10: dynamic async threshold.
+		 * When >60% of buffer is allocated, shrink async reservation
+		 * to 1/3 so sync transactions (WindowManager, SurfaceFlinger)
+		 * have more headroom on 3GB RAM devices.
+		 */
+		for (tmp = rb_first(&alloc->allocated_buffers); tmp;
+		     tmp = rb_next(tmp)) {
+			struct binder_buffer *b =
+				rb_entry(tmp, struct binder_buffer, rb_node);
+			total_alloc += binder_alloc_buffer_size(alloc, b);
+		}
+		async_threshold = (total_alloc > alloc->buffer_size * 6 / 10)
+				? alloc->buffer_size / 3
+				: alloc->buffer_size / 2;
+
+		if (alloc->free_async_space < size) {
+			binder_alloc_debug(BINDER_DEBUG_BUFFER_ALLOC,
+				"%d: binder_alloc_buf size %zd failed, no async space (free=%zd threshold=%zd)\n",
+				alloc->pid, size,
+				alloc->free_async_space, async_threshold);
+			return ERR_PTR(-ENOSPC);
+		}
 	}
 
 	while (n) {
