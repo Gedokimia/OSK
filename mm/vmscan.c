@@ -2282,7 +2282,7 @@ static unsigned long shrink_list(enum lru_list lru, unsigned long nr_to_scan,
 
 #ifdef CONFIG_MTK_GMO_RAM_OPTIMIZE
 /* threshold of swapin and out */
-static unsigned int swpinout_threshold = 12000;
+static unsigned int swpinout_threshold = 8000;
 module_param_named(threshold, swpinout_threshold, uint, 0644);
 static bool swap_is_allowed(void)
 {
@@ -2295,12 +2295,12 @@ static bool swap_is_allowed(void)
 	if (prev_time == 0)
 		prev_time = jiffies;
 
-	/* take 1s break */
-	if (!no_thrashing && time_before(jiffies, last_thrashing_time + HZ))
+	/* 500ms cooldown (was 1s) */
+	if (!no_thrashing && time_before(jiffies, last_thrashing_time + HZ / 2))
 		return false;
 
-	/* detect at 8Hz */
-	if (time_after(jiffies, prev_time + (HZ >> 3))) {
+	/* detect at 16Hz (was 8Hz) */
+	if (time_after(jiffies, prev_time + (HZ >> 4))) {
 		for_each_online_cpu(cpu) {
 			struct vm_event_state *this =
 					&per_cpu(vm_event_states, cpu);
@@ -3877,6 +3877,10 @@ static bool should_run_aging(struct lruvec *lruvec, unsigned long max_seq,
 	if (old * (MIN_NR_GENS + 2) < total)
 		return true;
 
+	/* OSK: trigger aging when oldest gen < 10% of total pages */
+	if (old * 10 < total)
+		return true;
+
 	return false;
 }
 
@@ -3928,7 +3932,7 @@ static bool age_lruvec(struct lruvec *lruvec, struct scan_control *sc,
 }
 
 /* to protect the working set of the last N jiffies */
-static unsigned long lru_gen_min_ttl __read_mostly = 1000; /* KernelBumi: 1s cold-page TTL */
+static unsigned long lru_gen_min_ttl __read_mostly = HZ / 2; /* OSK: 500ms */
 
 static void lru_gen_age_node(struct pglist_data *pgdat, struct scan_control *sc)
 {
@@ -3972,15 +3976,26 @@ static void lru_gen_age_node(struct pglist_data *pgdat, struct scan_control *sc)
 	 * The main goal is to OOM kill if every generation from all memcgs is
 	 * younger than min_ttl. However, another theoretical possibility is all
 	 * memcgs are either below min or empty.
+	 *
+	 * OSK: gate OOM to 1 attempt per 2s per node to prevent cascading
+	 * kills when all memcgs are min_ttl-protected (3GB HyperOS workloads).
 	 */
-	if (!success && !sc->order && mutex_trylock(&oom_lock)) {
-		struct oom_control oc = {
-			.gfp_mask = sc->gfp_mask,
-		};
+	{
+		static DEFINE_PER_CPU(unsigned long, last_oom_jiffies);
+		unsigned long *last_oom = this_cpu_ptr(&last_oom_jiffies);
 
-		out_of_memory(&oc);
+		if (!success && !sc->order &&
+		    time_after(jiffies, *last_oom + 2 * HZ) &&
+		    mutex_trylock(&oom_lock)) {
+			struct oom_control oc = {
+				.gfp_mask = sc->gfp_mask,
+			};
 
-		mutex_unlock(&oom_lock);
+			*last_oom = jiffies;
+			out_of_memory(&oc);
+
+			mutex_unlock(&oom_lock);
+		}
 	}
 }
 
@@ -4516,7 +4531,11 @@ static void lru_gen_shrink_lruvec(struct lruvec *lruvec, struct scan_control *sc
 			/* don't abort immediately right after aging */
 		}
 
-		nr_batch = min_t(unsigned long, nr_to_scan - scanned, MIN_LRU_BATCH);
+		nr_batch = min_t(unsigned long, nr_to_scan - scanned,
+				 sc->priority < DEF_PRIORITY ?
+				 max_t(unsigned long, 1UL,
+				       MIN_LRU_BATCH >> (DEF_PRIORITY - sc->priority)) :
+				 MIN_LRU_BATCH);
 		if (nr_batch <= 0)
 			break;
 
