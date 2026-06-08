@@ -321,16 +321,16 @@ compound_page_dtor * const compound_page_dtors[] = {
  * allocations below this point, only high priority ones. Automatically
  * tuned according to the amount of memory in the system.
  */
-int min_free_kbytes = 8192; /* KernelBumi: 8MB reserve for G85 2GB */
+int min_free_kbytes = 16384; /* OSK: 16MB default (3GB G85), adjusted at boot */
 int user_min_free_kbytes = -1;
-int watermark_scale_factor = 150; /* KernelBumi 4GB: 15% stable watermark */
+int watermark_scale_factor = 125; /* OSK: 12.5% — balanced for 3/4GB */
 
 /*
  * Extra memory for the system to try freeing. Used to temporarily
  * free memory, to make space for new workloads. Anyone can allocate
  * down to the min watermarks controlled by min_free_kbytes above.
  */
-int extra_free_kbytes = 0;
+int extra_free_kbytes = 8192; /* OSK: 8MB WMARK_LOW headroom */
 
 static unsigned long nr_kernel_pages __meminitdata;
 static unsigned long nr_all_pages __meminitdata;
@@ -3263,6 +3263,29 @@ fail:
 late_initcall(fail_page_alloc_debugfs);
 
 #endif /* CONFIG_FAULT_INJECTION_DEBUG_FS */
+
+/*
+ * OSK: detect 3GB vs 4GB at boot and tune watermarks accordingly.
+ * Runs after meminfo is available (pure_initcall is too early).
+ */
+static int __init osk_watermark_init(void)
+{
+	struct sysinfo si;
+
+	si_meminfo(&si);
+	/* totalram in pages; threshold ~3.4GB to detect 4GB SKU */
+	if (si.totalram >= ((4UL * (1024 * 1024 * 1024 / PAGE_SIZE)) * 85 / 100)) {
+		min_free_kbytes      = 24576;
+		extra_free_kbytes    = 12288;
+		watermark_scale_factor = 100;
+		pr_info("OSK watermarks: 4GB SKU tuning applied\n");
+	} else {
+		pr_info("OSK watermarks: 3GB SKU tuning applied\n");
+	}
+	setup_per_zone_wmarks();
+	return 0;
+}
+late_initcall(osk_watermark_init);
 
 #else /* CONFIG_FAIL_PAGE_ALLOC */
 
