@@ -23,6 +23,9 @@
 #define OAKS_BIG_LAST		7
 #define OAKS_NR_CPUS		8
 
+/* cpu_util_cfs() range; used to normalise util to [0,100]% */
+#define OAKS_UTIL_SCALE		1024  /* == SCHED_CAPACITY_SCALE */
+
 /* LMK: oom_score_adj bands (mirrors Android lmkd tiers) */
 #define OAKS_LMK_ADJ_CACHED		906
 #define OAKS_LMK_ADJ_NONEMPTY		700
@@ -36,8 +39,14 @@
 #define OAKS_LMK_PRESSURE_HIGH		80  /* kill cached only */
 #define OAKS_LMK_PRESSURE_LOW		70  /* skip killing */
 
-/* PSI mem-some 10s average threshold to trigger proactive reclaim (scaled) */
-#define OAKS_PSI_MEM_SOME_THRESH	500 /* 5.00% in PSI fixed-point */
+/*
+ * PSI mem-some 10s average threshold.
+ * psi_group.avg[] uses FIXED_1=2048 as 100% (FSHIFT=11, same as load_avg).
+ *   threshold = percent * 2048 / 100
+ *   10% stall = 205  <- correct
+ *   24% stall = 500  <- old wrong value; comment falsely said '5%'
+ */
+#define OAKS_PSI_MEM_SOME_THRESH	205 /* 10% in FIXED_1=2048 units */
 
 /* Hysteresis: min jiffies between successive LMK sweeps */
 #define OAKS_LMK_MIN_INTERVAL_J		(HZ * 2)

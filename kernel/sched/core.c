@@ -6,6 +6,7 @@
  *  Copyright (C) 1991-2002  Linus Torvalds
  */
 #include "sched.h"
+#include "oaks.h"
 
 #include <linux/nospec.h>
 
@@ -4214,6 +4215,9 @@ void scheduler_tick(void)
 #ifdef CONFIG_MTK_QOS_FRAMEWORK
 	qos_prefetch_tick(cpu);
 #endif /* CONFIG_MTK_QOS_FRAMEWORK */
+
+	/* OAKS: context detection + LMK pressure (rate-limited internally) */
+	oaks_tick();
 }
 
 #ifdef CONFIG_NO_HZ_FULL
