@@ -26,33 +26,12 @@
 /* cpu_util_cfs() range; used to normalise util to [0,100]% */
 #define OAKS_UTIL_SCALE		1024  /* == SCHED_CAPACITY_SCALE */
 
-/* LMK: oom_score_adj bands (mirrors Android lmkd tiers) */
-#define OAKS_LMK_ADJ_CACHED		906
-#define OAKS_LMK_ADJ_NONEMPTY		700
-#define OAKS_LMK_ADJ_EMPTY		500
-#define OAKS_LMK_ADJ_PERCEPTIBLE	200
-#define OAKS_LMK_ADJ_VISIBLE		100
-#define OAKS_LMK_ADJ_FOREGROUND	  0
-
-/* LMK memory pressure levels (% of totalram used) */
-#define OAKS_LMK_PRESSURE_CRITICAL	90  /* kill cached + nonempty */
-#define OAKS_LMK_PRESSURE_HIGH		80  /* kill cached only */
-#define OAKS_LMK_PRESSURE_LOW		70  /* skip killing */
-
 /*
- * PSI mem-some 10s average threshold.
- * psi_group.avg[] uses FIXED_1=2048 as 100% (FSHIFT=11, same as load_avg).
- *   threshold = percent * 2048 / 100
- *   10% stall = 205  <- correct
- *   24% stall = 500  <- old wrong value; comment falsely said '5%'
+ * PSI mem-some 10s average threshold (for context scoring only).
+ * PSI avg[] uses FIXED_1=2048 as 100% (FSHIFT=11).
+ *   10% stall = 205
  */
 #define OAKS_PSI_MEM_SOME_THRESH	205 /* 10% in FIXED_1=2048 units */
-
-/* Hysteresis: min jiffies between successive LMK sweeps */
-#define OAKS_LMK_MIN_INTERVAL_J		(HZ * 2)
-
-/* Max tasks killed in one sweep to avoid jank */
-#define OAKS_LMK_MAX_KILL_PER_SWEEP	3
 
 enum oaks_ctx {
 	OAKS_CTX_BATTERY	= 0,
@@ -98,22 +77,7 @@ struct oaks_ctx_signals {
 	unsigned int	big_nr_running;
 };
 
-/*
- * LMK state — shrinker-driven, deferred via workqueue.
- */
-struct oaks_lmk_state {
-	struct work_struct	kill_work;
-	/* last jiffies a sweep ran */
-	unsigned long		last_sweep_j;
-	/* kills issued lifetime */
-	atomic_long_t		total_kills;
-	/* bytes reclaimed lifetime */
-	atomic_long_t		total_reclaimed_kb;
-	/* current sweep target adj (set before scheduling work) */
-	short			sweep_min_adj;
-	/* set if a sweep is already pending */
-	atomic_t		pending;
-};
+
 
 struct oaks_state {
 	atomic_t			ctx;
@@ -122,7 +86,18 @@ struct oaks_state {
 	unsigned long			responsive_timeout_j;
 	unsigned long			ctx_switches[OAKS_CTX_MAX];
 	struct oaks_ctx_signals		sig;
-	struct oaks_lmk_state		lmk;
+	/*
+	 * ctx_work: deferred workqueue item for static_key transitions.
+	 * static_branch_enable/disable require a mutex (jump_label_mutex)
+	 * and cpus_read_lock — both sleep. They CANNOT be called from
+	 * hardirq context (scheduler_tick, input_handle_event).
+	 * All static_key operations are deferred here.
+	 *
+	 * pending_ctx: the ctx value to apply when ctx_work runs.
+	 * Written atomically; ctx_work reads it and calls oaks_set_ctx_work().
+	 */
+	struct work_struct		ctx_work;
+	atomic_t			pending_ctx;
 };
 
 DECLARE_STATIC_KEY_FALSE(oaks_active);
@@ -140,9 +115,6 @@ void oaks_notify_touch(void);
 void oaks_notify_perf_scene(pid_t main_pid, pid_t render_pid, bool enter);
 void oaks_tick(void);
 
-/* LMK */
-void oaks_lmk_pressure_check(void);
-
 /* ------------------------------------------------------------------ */
 
 static inline bool oaks_in_perf(void)
@@ -157,32 +129,6 @@ static inline bool oaks_is_responsive(void)
 	if (!static_branch_unlikely(&oaks_active))
 		return false;
 	return atomic_read(&oaks.ctx) >= OAKS_CTX_RESPONSIVE;
-}
-
-/*
- * oaks_oom_guard - return true if @p must not be killed by our LMK.
- * Guards: foreground (adj<=0), perf main/render, and system processes.
- */
-static inline bool oaks_oom_guard(struct task_struct *p)
-{
-	short adj;
-
-	if (!p->signal)
-		return true;
-
-	adj = p->signal->oom_score_adj;
-
-	/* Never kill system / persistent processes */
-	if (adj <= OAKS_LMK_ADJ_FOREGROUND)
-		return true;
-
-	/* Never kill the active perf scene */
-	if (oaks_in_perf() &&
-	    (p->tgid == oaks.perf.main_pid ||
-	     p->pid  == oaks.perf.render_pid))
-		return true;
-
-	return false;
 }
 
 /*

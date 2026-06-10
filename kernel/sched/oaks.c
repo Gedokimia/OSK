@@ -6,20 +6,15 @@
  * Improvements over v1:
  *  - Multi-signal context detection (touch, PSI, big-cluster util, render wakes)
  *  - Hysteresis to prevent rapid ctx oscillation
- *  - Smart in-kernel LMK: shrinker-triggered, adj-tiered, deferred kill
  *  - BORE parameter push per context
- *  - Sysfs: added lmk_stats, lmk_enable, mem_pressure nodes
+ *  - Deferred ctx transitions via workqueue (safe from hardirq)
+ *  - Sysfs: context, responsive_timeout_ms, stats
  */
 
 #include "sched.h"
 #include "oaks.h"
 #include <linux/kobject.h>
 #include <linux/sysfs.h>
-#include <linux/mm.h>
-#include <linux/swap.h>
-#include <linux/oom.h>
-#include <linux/sched/signal.h>
-#include <linux/rcupdate.h>
 #include <linux/psi.h>
 #include <linux/workqueue.h>
 
@@ -32,6 +27,7 @@ EXPORT_SYMBOL(oaks_active);
 
 struct oaks_state oaks = {
 	.ctx			= ATOMIC_INIT(OAKS_CTX_BALANCED),
+	.pending_ctx		= ATOMIC_INIT(OAKS_CTX_BALANCED),
 	.responsive_timeout_j	= HZ / 2,
 };
 EXPORT_SYMBOL(oaks);
@@ -101,8 +97,6 @@ extern unsigned int sysctl_sched_wakeup_granularity;
 extern unsigned int sched_burst_penalty_scale; /* uint __read_mostly */
 #endif
 
-/* LMK enable flag — writable from sysfs */
-static int oaks_lmk_enabled __read_mostly = 1;
 
 /* -----------------------------------------------------------------------
  * Context application
@@ -122,10 +116,21 @@ static void oaks_apply_params(enum oaks_ctx ctx)
 #endif
 }
 
-void oaks_set_ctx(enum oaks_ctx ctx)
+/*
+ * oaks_ctx_work_fn — workqueue handler for deferred ctx transitions.
+ *
+ * static_branch_enable/disable require jump_label_mutex (a sleeping
+ * mutex) and cpus_read_lock. They MUST NOT be called from hardirq
+ * context (scheduler_tick, input_handle_event with irqs disabled).
+ *
+ * This work item is scheduled by oaks_set_ctx() which is safe to call
+ * from any context. The actual static_key flip runs here in process ctx.
+ */
+static void oaks_ctx_work_fn(struct work_struct *work)
 {
-	enum oaks_ctx old;
+	enum oaks_ctx ctx = (enum oaks_ctx)atomic_read(&oaks.pending_ctx);
 	unsigned long flags;
+	enum oaks_ctx old;
 
 	if (WARN_ON_ONCE(ctx >= OAKS_CTX_MAX))
 		return;
@@ -139,10 +144,12 @@ void oaks_set_ctx(enum oaks_ctx ctx)
 	atomic_set(&oaks.ctx, ctx);
 	oaks.ctx_switches[ctx]++;
 	oaks_apply_params(ctx);
+	spin_unlock_irqrestore(&oaks.lock, flags);
 
 	/*
-	 * static_key: active when ctx > BALANCED so the fast-paths in
-	 * oaks_in_perf() / oaks_is_responsive() are near-zero cost in
+	 * Static key transition — safe here because we are in process
+	 * context (workqueue), not hardirq. The key gates oaks_in_perf()
+	 * and oaks_is_responsive() fast-paths to near-zero cost in
 	 * BATTERY and BALANCED.
 	 */
 	if (ctx > OAKS_CTX_BALANCED)
@@ -150,13 +157,34 @@ void oaks_set_ctx(enum oaks_ctx ctx)
 	else
 		static_branch_disable(&oaks_active);
 
-	spin_unlock_irqrestore(&oaks.lock, flags);
-
 	pr_debug("OAKS: ctx %d -> %d (touch=%lu psi=%lu big_util=%u)\n",
 		 old, ctx,
 		 READ_ONCE(oaks.sig.last_touch_j),
 		 READ_ONCE(oaks.sig.psi_mem_some_avg),
 		 READ_ONCE(oaks.sig.big_cluster_util));
+}
+
+/*
+ * oaks_set_ctx — request a context transition.
+ *
+ * Safe to call from ANY context including hardirq and irqs-disabled.
+ * Writes the desired ctx atomically and schedules oaks_ctx_work_fn()
+ * to perform the actual static_key flip in process context.
+ *
+ * oaks_apply_params() (writing sysctl_sched_* via WRITE_ONCE) is also
+ * deferred to the workqueue for the same reason: fair.c reads these
+ * in __schedule() which runs with interrupts enabled but we want
+ * consistent updates.
+ */
+void oaks_set_ctx(enum oaks_ctx ctx)
+{
+	if (WARN_ON_ONCE(ctx >= OAKS_CTX_MAX))
+		return;
+	if ((enum oaks_ctx)atomic_read(&oaks.ctx) == ctx)
+		return;
+
+	atomic_set(&oaks.pending_ctx, (int)ctx);
+	schedule_work(&oaks.ctx_work);
 }
 EXPORT_SYMBOL(oaks_set_ctx);
 
@@ -172,11 +200,13 @@ EXPORT_SYMBOL(oaks_get_ctx);
 
 void oaks_notify_touch(void)
 {
-	WRITE_ONCE(oaks.sig.last_touch_j, jiffies);
 	/*
-	 * Touch always bumps to at least RESPONSIVE. Never downgrade
-	 * an active PERF scene — oaks_tick() handles that separately.
+	 * Called from input_handle_event with dev->event_lock held and
+	 * interrupts disabled (hardirq context). Only WRITE_ONCE to the
+	 * timestamp is safe here. The ctx bump is handled by oaks_set_ctx()
+	 * which defers the static_key work to process context.
 	 */
+	WRITE_ONCE(oaks.sig.last_touch_j, jiffies);
 	if (oaks_get_ctx() < OAKS_CTX_RESPONSIVE)
 		oaks_set_ctx(OAKS_CTX_RESPONSIVE);
 }
@@ -400,197 +430,16 @@ void oaks_tick(void)
 	oaks_sample_big_cluster();
 	oaks_sample_psi_mem();
 
+	/*
+	 * oaks_set_ctx() is now safe to call from hardirq: it only writes
+	 * an atomic and schedules ctx_work. The static_key flip and
+	 * sched param updates happen in oaks_ctx_work_fn() (process ctx).
+	 */
 	oaks_set_ctx(oaks_detect_ctx());
-
-	if (oaks_lmk_enabled &&
-	    READ_ONCE(oaks.sig.psi_mem_some_avg) >= OAKS_PSI_MEM_SOME_THRESH)
-		oaks_lmk_pressure_check();
 }
 EXPORT_SYMBOL(oaks_tick);
 
-/* -----------------------------------------------------------------------
- * Smart Low-Memory Killer
- *
- * Design:
- *  - Triggered by oaks_tick() when PSI mem-some avg is high, OR
- *    by the registered shrinker when the page allocator is stressed.
- *  - Victim selection: lowest adj ≥ sweep_min_adj, highest RSS wins.
- *  - Kill is issued via SIGKILL from a workqueue (not in IRQ/shrinker ctx).
- *  - Hysteresis: OAKS_LMK_MIN_INTERVAL_J between sweeps.
- *  - oaks_oom_guard() protects foreground + active perf scene.
- *  - Kills up to OAKS_LMK_MAX_KILL_PER_SWEEP per sweep.
- * ----------------------------------------------------------------------- */
 
-static unsigned long oaks_mem_pressure_pct(void)
-{
-	struct sysinfo si;
-	si_meminfo(&si);
-	if (!si.totalram)
-		return 0;
-	/* used% = (total - free - buffers) / total * 100 */
-	return 100 - (si.freeram + si.bufferram) * 100 / si.totalram;
-}
-
-/*
- * Pick the best kill target: highest RSS among processes with
- * oom_score_adj >= min_adj that are not guarded.
- * Must be called under rcu_read_lock().
- * Returns task with get_task_struct() held, or NULL.
- */
-static struct task_struct *oaks_lmk_pick_victim(short min_adj)
-{
-	struct task_struct *p, *best = NULL;
-	unsigned long best_rss = 0;
-
-	for_each_process(p) {
-		struct mm_struct *mm;
-		unsigned long rss;
-		short adj;
-
-		/*
-		 * Skip kernel threads, zombies, and tasks being killed.
-		 */
-		if (p->flags & (PF_KTHREAD | PF_EXITING))
-			continue;
-
-		if (!p->signal)
-			continue;
-
-		adj = READ_ONCE(p->signal->oom_score_adj);
-		if (adj < min_adj)
-			continue;
-
-		if (oaks_oom_guard(p))
-			continue;
-
-		mm = p->mm;
-		if (!mm)
-			continue;
-
-		rss = get_mm_rss(mm);
-		if (rss > best_rss) {
-			best_rss = rss;
-			best = p;
-		}
-	}
-
-	if (best)
-		get_task_struct(best);
-
-	return best;
-}
-
-static void oaks_lmk_kill_work_fn(struct work_struct *work)
-{
-	struct oaks_lmk_state *lmk =
-		container_of(work, struct oaks_lmk_state, kill_work);
-	short min_adj = READ_ONCE(lmk->sweep_min_adj);
-	int killed = 0;
-
-	while (killed < OAKS_LMK_MAX_KILL_PER_SWEEP) {
-		struct task_struct *victim;
-		unsigned long rss_kb;
-
-		rcu_read_lock();
-		victim = oaks_lmk_pick_victim(min_adj);
-		rcu_read_unlock();
-
-		if (!victim)
-			break;
-
-		rss_kb = get_mm_rss(victim->mm) << (PAGE_SHIFT - 10);
-
-		pr_info("OAKS-LMK: killing pid=%d (%s) adj=%d rss=%lukB\n",
-			victim->pid, victim->comm,
-			victim->signal ? victim->signal->oom_score_adj : 0,
-			rss_kb);
-
-		send_sig(SIGKILL, victim, 0);
-		atomic_long_add(rss_kb, &lmk->total_reclaimed_kb);
-		atomic_long_inc(&lmk->total_kills);
-		killed++;
-
-		put_task_struct(victim);
-
-		/* Bail early if pressure already relieved */
-		if (oaks_mem_pressure_pct() < OAKS_LMK_PRESSURE_LOW)
-			break;
-	}
-
-	WRITE_ONCE(lmk->last_sweep_j, jiffies);
-	atomic_set(&lmk->pending, 0);
-}
-
-/*
- * oaks_lmk_pressure_check - decide whether to fire a sweep and at
- * what adj tier. Safe to call from any context (schedules work).
- */
-void oaks_lmk_pressure_check(void)
-{
-	struct oaks_lmk_state *lmk = &oaks.lmk;
-	unsigned long pct;
-	short min_adj;
-
-	if (!oaks_lmk_enabled)
-		return;
-
-	/* Hysteresis */
-	if (time_before(jiffies, READ_ONCE(lmk->last_sweep_j) +
-			OAKS_LMK_MIN_INTERVAL_J))
-		return;
-
-	/* Avoid stacking sweeps */
-	if (atomic_cmpxchg(&lmk->pending, 0, 1) != 0)
-		return;
-
-	pct = oaks_mem_pressure_pct();
-
-	if (pct >= OAKS_LMK_PRESSURE_CRITICAL)
-		min_adj = OAKS_LMK_ADJ_NONEMPTY;  /* kill nonempty + cached */
-	else if (pct >= OAKS_LMK_PRESSURE_HIGH)
-		min_adj = OAKS_LMK_ADJ_CACHED;    /* kill cached only */
-	else {
-		/* Not enough pressure, cancel */
-		atomic_set(&lmk->pending, 0);
-		return;
-	}
-
-	WRITE_ONCE(lmk->sweep_min_adj, min_adj);
-	schedule_work(&lmk->kill_work);
-}
-EXPORT_SYMBOL(oaks_lmk_pressure_check);
-
-/* -----------------------------------------------------------------------
- * Shrinker: lets the page allocator trigger OAKS-LMK under direct reclaim
- * ----------------------------------------------------------------------- */
-
-static unsigned long oaks_shrinker_count(struct shrinker *s,
-					 struct shrink_control *sc)
-{
-	unsigned long pct = oaks_mem_pressure_pct();
-
-	/* Report a non-zero object count only when we'd actually kill */
-	if (pct >= OAKS_LMK_PRESSURE_HIGH)
-		return pct; /* arbitrary non-zero; we don't manage a slab */
-	return 0;
-}
-
-static unsigned long oaks_shrinker_scan(struct shrinker *s,
-					struct shrink_control *sc)
-{
-	oaks_lmk_pressure_check();
-	/*
-	 * We don't actually shrink slab objects here; return SHRINK_STOP so
-	 * the MM doesn't keep hammering us if reclaim isn't making progress.
-	 */
-	return SHRINK_STOP;
-}
-
-static struct shrinker oaks_shrinker = {
-	.count_objects = oaks_shrinker_count,
-	.scan_objects  = oaks_shrinker_scan,
-	.seeks         = DEFAULT_SEEKS,
-};
 
 /* -----------------------------------------------------------------------
  * Init
@@ -600,30 +449,21 @@ void oaks_init(void)
 {
 	spin_lock_init(&oaks.lock);
 	atomic_set(&oaks.ctx, OAKS_CTX_BALANCED);
+	atomic_set(&oaks.pending_ctx, OAKS_CTX_BALANCED);
 
-	/* LMK */
-	INIT_WORK(&oaks.lmk.kill_work, oaks_lmk_kill_work_fn);
-	atomic_long_set(&oaks.lmk.total_kills, 0);
-	atomic_long_set(&oaks.lmk.total_reclaimed_kb, 0);
-	atomic_set(&oaks.lmk.pending, 0);
-	oaks.lmk.last_sweep_j = jiffies;
-
-	register_shrinker(&oaks_shrinker);
+	/* Deferred ctx transition work — safe to call from any context */
+	INIT_WORK(&oaks.ctx_work, oaks_ctx_work_fn);
 
 	oaks_apply_params(OAKS_CTX_BALANCED);
 
-	pr_info("OAKS: initialized — MT6768/G85 cpu0-5=A55 cpu6-7=A75 "
-		"lmk=%s\n", oaks_lmk_enabled ? "on" : "off");
+	pr_info("OAKS: initialized — MT6768/G85 cpu0-5=A55 cpu6-7=A75\n");
 }
 
 /* -----------------------------------------------------------------------
  * Sysfs: /sys/kernel/oaks/
- *   context              rw  current ctx (0-3)
- *   responsive_timeout_ms rw  touch-decay timeout
- *   stats                ro  ctx switch counters + perf pids
- *   lmk_stats            ro  kill count + reclaimed KB
- *   lmk_enable           rw  enable/disable LMK (1/0)
- *   mem_pressure         ro  current used-memory %
+ *   context               rw  current ctx (0-3)
+ *   responsive_timeout_ms rw  touch-decay timeout in ms
+ *   stats                 ro  ctx switches, perf pids, cluster util, PSI
  * ----------------------------------------------------------------------- */
 
 static struct kobject *oaks_kobj;
@@ -701,53 +541,11 @@ static ssize_t stats_show(struct kobject *kobj,
 static struct kobj_attribute oaks_stats_attr =
 	__ATTR(stats, 0444, stats_show, NULL);
 
-static ssize_t lmk_stats_show(struct kobject *kobj,
-			      struct kobj_attribute *attr, char *buf)
-{
-	return scnprintf(buf, PAGE_SIZE,
-			 "total_kills=%ld reclaimed_kb=%ld last_sweep_age_ms=%u\n",
-			 atomic_long_read(&oaks.lmk.total_kills),
-			 atomic_long_read(&oaks.lmk.total_reclaimed_kb),
-			 jiffies_to_msecs(jiffies - READ_ONCE(oaks.lmk.last_sweep_j)));
-}
-static struct kobj_attribute oaks_lmk_stats_attr =
-	__ATTR(lmk_stats, 0444, lmk_stats_show, NULL);
-
-static ssize_t lmk_enable_show(struct kobject *kobj,
-			       struct kobj_attribute *attr, char *buf)
-{
-	return scnprintf(buf, PAGE_SIZE, "%d\n", oaks_lmk_enabled);
-}
-
-static ssize_t lmk_enable_store(struct kobject *kobj,
-				struct kobj_attribute *attr,
-				const char *buf, size_t count)
-{
-	unsigned int val;
-
-	if (kstrtouint(buf, 10, &val) || val > 1)
-		return -EINVAL;
-	WRITE_ONCE(oaks_lmk_enabled, val);
-	return count;
-}
-static struct kobj_attribute oaks_lmk_enable_attr =
-	__ATTR(lmk_enable, 0644, lmk_enable_show, lmk_enable_store);
-
-static ssize_t mem_pressure_show(struct kobject *kobj,
-				 struct kobj_attribute *attr, char *buf)
-{
-	return scnprintf(buf, PAGE_SIZE, "%lu%%\n", oaks_mem_pressure_pct());
-}
-static struct kobj_attribute oaks_mem_pressure_attr =
-	__ATTR(mem_pressure, 0444, mem_pressure_show, NULL);
 
 static struct attribute *oaks_attrs[] = {
 	&oaks_ctx_attr.attr,
 	&oaks_timeout_attr.attr,
 	&oaks_stats_attr.attr,
-	&oaks_lmk_stats_attr.attr,
-	&oaks_lmk_enable_attr.attr,
-	&oaks_mem_pressure_attr.attr,
 	NULL,
 };
 static const struct attribute_group oaks_attr_group = {
