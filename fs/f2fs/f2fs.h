@@ -205,8 +205,22 @@ enum {
 #define DEF_MID_DISCARD_ISSUE_TIME	500	/* 500 ms, if device busy */
 #define DEF_MAX_DISCARD_ISSUE_TIME	60000	/* 60 s, if no candidates */
 #define DEF_DISCARD_URGENT_UTIL		80	/* do more discard over 80% */
-#define DEF_CP_INTERVAL			300	/* KernelBumi: 5min, reduce eMMC checkpoint wear */
-#define DEF_IDLE_INTERVAL		5	/* 5 secs */
+/*
+ * OSK checkpoint policy (eMMC, no power-loss capacitor):
+ *
+ * DEF_CP_INTERVAL 300s (5 min):
+ *   Each checkpoint flushes all dirty node/data pages and issues a
+ *   FLUSH command to the eMMC.  On a 128GB eMMC rated for ~1000 P/E
+ *   cycles, a 5-minute interval keeps the daily write amplification
+ *   within the device's endurance budget.  Android graceful-shutdown
+ *   path calls f2fs_sync_fs() before poweroff so dirty data is not lost.
+ *
+ * DEF_IDLE_INTERVAL 5s:
+ *   Trigger an idle-path checkpoint 5 s after the last write to bound
+ *   dirty-metadata age without waiting the full CP_INTERVAL.
+ */
+#define DEF_CP_INTERVAL			300	/* s: 5-min checkpoint to spare eMMC */
+#define DEF_IDLE_INTERVAL		5	/* s: idle-triggered checkpoint */
 #define DEF_DISABLE_INTERVAL		5	/* 5 secs */
 #define DEF_DISABLE_QUICK_INTERVAL	1	/* 1 secs */
 #define DEF_UMOUNT_DISCARD_TIMEOUT	5	/* 5 secs */

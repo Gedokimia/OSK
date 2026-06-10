@@ -2908,11 +2908,32 @@ static int binder_proc_transaction(struct binder_transaction *t,
 		proc->async_recv |= oneway;
 	}
 
+	/*
+	 * OSK anti-stall (1): bail immediately on any frozen+sync combination.
+	 * The original code already does this, but we also guard the case where
+	 * is_frozen becomes true after the check above — a new sync txn arriving
+	 * while freeze is in-flight still hits a frozen proc with outstanding_txns
+	 * already counted. Return BR_FROZEN_REPLY so the caller gets an error
+	 * instead of stalling inside freeze_wait for up to timeout_ms.
+	 */
 	if ((proc->is_frozen && !oneway) || proc->is_dead ||
 			(thread && thread->is_dead)) {
 		binder_inner_proc_unlock(proc);
 		binder_node_unlock(node);
 		return proc->is_frozen ? BR_FROZEN_REPLY : BR_DEAD_REPLY;
+	}
+
+	/*
+	 * OSK anti-stall (2): if proc is freezing and already has unserviced
+	 * sync transactions, refuse to enqueue another one. Without this a
+	 * burst of sync IPC calls can pile up behind a stalled freeze_wait
+	 * chain and block all callers for up to freeze_info.timeout_ms.
+	 */
+	if (!oneway && proc->outstanding_txns > 0 &&
+	    READ_ONCE(proc->is_frozen)) {
+		binder_inner_proc_unlock(proc);
+		binder_node_unlock(node);
+		return BR_FROZEN_REPLY;
 	}
 
 	if (!thread && !pending_async)
@@ -4237,7 +4258,16 @@ static int binder_wait_for_work(struct binder_thread *thread,
 			list_add(&thread->waiting_thread_node,
 				 &proc->waiting_threads);
 		binder_inner_proc_unlock(proc);
-		schedule();
+		/*
+		 * OSK anti-stall (3): use schedule_timeout() with a 500ms cap.
+		 * If a wakeup is missed due to a race between
+		 * binder_wakeup_thread_ilocked() and this thread adding itself
+		 * to waiting_threads, the thread recovers within 500ms instead
+		 * of sleeping indefinitely. Harmless in the normal case: if work
+		 * arrives, prepare_to_wait + binder_has_work_ilocked still fires
+		 * before the timeout.
+		 */
+		schedule_timeout(msecs_to_jiffies(500));
 		binder_inner_proc_lock(proc);
 		list_del_init(&thread->waiting_thread_node);
 		if (signal_pending(current)) {

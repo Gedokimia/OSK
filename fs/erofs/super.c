@@ -378,6 +378,28 @@ static int erofs_build_cache_strategy(struct super_block *sb,
 static void erofs_default_options(struct erofs_sb_info *sbi)
 {
 #ifdef CONFIG_EROFS_FS_ZIP
+	/*
+	 * OSK EROFS defaults:
+	 *
+	 * cache_strategy = READAROUND:
+	 *   Cache decompressed pages on both sides of the accessed range.
+	 *   Improves random-access latency for APK assets, .odex and .vdex
+	 *   files that are memory-mapped by ART and accessed out-of-order.
+	 *   READAHEAD-only would miss backward references common in LZ4
+	 *   compressed archives.
+	 *
+	 * max_sync_decompress_pages = 3:
+	 *   Limit synchronous decompression to 3 pages (12 KiB) per call.
+	 *   Larger limits stall the page-fault handler for too long on cold
+	 *   code paths, causing jank during first-launch of large APKs.
+	 *
+	 * readahead_sync_decompress = false (async):
+	 *   During readahead, decompress asynchronously so the readahead
+	 *   thread is not blocked.  Synchronous readahead decompression on
+	 *   a CPU-constrained A55 core causes latency spikes during app
+	 *   transition animations where background readahead competes with
+	 *   the render thread.
+	 */
 	sbi->cache_strategy = EROFS_ZIP_CACHE_READAROUND;
 	sbi->max_sync_decompress_pages = 3;
 	sbi->readahead_sync_decompress = false;
