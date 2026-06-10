@@ -10,17 +10,41 @@
 						 * whether IO subsystem is idle
 						 * or not
 						 */
-#define DEF_GC_THREAD_URGENT_SLEEP_TIME	500	/* 500 ms */
-#define DEF_GC_THREAD_MIN_SLEEP_TIME	30000	/* milliseconds */
-#define DEF_GC_THREAD_MAX_SLEEP_TIME	60000
-#define DEF_GC_THREAD_NOGC_SLEEP_TIME	300000	/* wait 5 min */
+/*
+ * OSK F2FS GC thread sleep intervals (all in milliseconds):
+ *
+ * URGENT (near OOSpace): 200ms.
+ *   Faster response than upstream 500ms; on a nearly-full eMMC partition
+ *   every extra second of stall increases the risk of ENOSPC during app
+ *   writes.  200ms is tight enough to keep free segments above the
+ *   watermark without hammering the eMMC continuously.
+ *
+ * MIN / MAX (normal background GC window): 20s–30s.
+ *   Upstream uses 30s–60s.  Tightening to 20s–30s reduces the maximum
+ *   time GC can be starved by foreground IO without adding significant
+ *   erase-cycle cost on a healthy (>10% free) volume.
+ *
+ * NOGC (nothing to collect): 5 min — unchanged from upstream.
+ */
+#define DEF_GC_THREAD_URGENT_SLEEP_TIME	200
+#define DEF_GC_THREAD_MIN_SLEEP_TIME	20000
+#define DEF_GC_THREAD_MAX_SLEEP_TIME	30000
+#define DEF_GC_THREAD_NOGC_SLEEP_TIME	300000
 #define LIMIT_INVALID_BLOCK	40 /* percentage over total user space */
 #define LIMIT_FREE_BLOCK	40 /* percentage over invalid + free space */
 
 #define DEF_GC_FAILED_PINNED_FILES	2048
 
 /* Search max. number of dirty segments to select a victim segment */
-#define DEF_MAX_VICTIM_SEARCH 4096 /* covers 8GB */
+/*
+ * OSK: reduce max victim search from 4096 to 2048 segments.
+ * A full 4096-segment search on a fragmented 128GB eMMC volume can take
+ * several hundred milliseconds, blocking foreground writeback behind it.
+ * 2048 covers a 4GB partition cleanly and keeps the search bounded.
+ * The urgency path (gc_urgent sysfs) already sets a tighter per-call
+ * limit inside f2fs_gc(); this constant caps the global maximum.
+ */
+#define DEF_MAX_VICTIM_SEARCH 2048
 
 struct f2fs_gc_kthread {
 	struct task_struct *f2fs_gc_task;

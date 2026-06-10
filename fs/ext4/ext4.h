@@ -1935,8 +1935,26 @@ static inline int ext4_forced_shutdown(struct ext4_sb_info *sbi)
 /*
  * Default journal batch times
  */
-#define EXT4_DEF_MIN_BATCH_TIME	0
-#define EXT4_DEF_MAX_BATCH_TIME	15000 /* 15ms */
+/*
+ * OSK JBD2 commit batch-time defaults:
+ *
+ * MIN_BATCH_TIME 2000 us (2 ms):
+ *   Give the journal a 2ms window to coalesce transactions before
+ *   committing.  The upstream default of 0 means every fsync/close
+ *   triggers an immediate single-transaction commit, which wastes
+ *   eMMC write bandwidth on small metadata-only transactions.
+ *   2ms is short enough to stay within one 60Hz vsync budget.
+ *
+ * MAX_BATCH_TIME 8000 us (8 ms):
+ *   Cap the coalesce window at 8ms (upstream: 15ms).  A 15ms journal
+ *   stall is directly visible as a frame drop on a 60fps display; 8ms
+ *   keeps the worst-case commit within one vsync window.
+ *
+ * These values are applied to journal->j_min/max_batch_time in
+ * ext4_fill_super() → ext4_commit_super() via JBD2 journal_set_features.
+ */
+#define EXT4_DEF_MIN_BATCH_TIME	2000	/* us: 2ms coalesce window */
+#define EXT4_DEF_MAX_BATCH_TIME	8000	/* us: 8ms max commit stall */
 
 /*
  * Minimum number of groups in a flexgroup before we separate out

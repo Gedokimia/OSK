@@ -75,7 +75,19 @@ do {									\
 /*
  * default group prealloc size 512 blocks
  */
-#define MB_DEFAULT_GROUP_PREALLOC	512
+/*
+ * OSK: group preallocation 256 blocks (1 MiB) instead of 512 (2 MiB).
+ *
+ * ext4 mballoc reserves MB_DEFAULT_GROUP_PREALLOC contiguous blocks per
+ * group when a file grows beyond s_mb_stream_request.  On eMMC:
+ *  - Large prealloc chunks hold onto free space longer, increasing the
+ *    chance of fragmented block-group bitmaps under concurrent writers.
+ *  - 256 blocks (1 MiB) is still large enough to prevent per-block
+ *    allocation overhead for normal file writes up to ~256 MB.
+ *  - Halving the chunk reduces the average discard latency when Android
+ *    fstrim runs, because fewer large sparse extents need to be coalesced.
+ */
+#define MB_DEFAULT_GROUP_PREALLOC	256
 
 
 struct ext4_free_data {

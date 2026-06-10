@@ -118,8 +118,14 @@ struct erofs_sb_info {
 
 #ifdef CONFIG_EROFS_FS_ZIP
 enum {
-	EROFS_ZIP_CACHE_DISABLED,
-	EROFS_ZIP_CACHE_READAHEAD,
+	EROFS_ZIP_CACHE_DISABLED,	/* no decompressed-page caching */
+	EROFS_ZIP_CACHE_READAHEAD,	/* cache pages in forward-sequential order */
+	/*
+	 * OSK default: READAROUND caches decompressed pages on both sides of
+	 * the accessed cluster range.  This improves random-access latency for
+	 * APK asset reads, JIT-compiled odex files, and shared library mmap
+	 * where access patterns are neither purely sequential nor fully random.
+	 */
 	EROFS_ZIP_CACHE_READAROUND
 };
 

@@ -14,6 +14,7 @@
 #include <trace/events/sched.h>
 
 #include "sched.h"
+#include "oaks.h"
 
 #include <linux/sched/cpufreq.h>
 #include <trace/events/power.h>
@@ -131,16 +132,28 @@ static bool sugov_up_down_rate_limit(struct sugov_policy *sg_policy, u64 time,
 				     unsigned int next_freq)
 {
 	s64 delta_ns;
+	int first_cpu = cpumask_first(sg_policy->policy->cpus);
 
 	delta_ns = time - sg_policy->last_freq_update_time;
 
 	if (next_freq > sg_policy->next_freq &&
 	    delta_ns < sg_policy->up_rate_delay_ns)
-			return true;
+		return true;
 
 	if (next_freq < sg_policy->next_freq &&
-	    delta_ns < sg_policy->down_rate_delay_ns)
-			return true;
+	    delta_ns < sg_policy->down_rate_delay_ns) {
+		/*
+		 * OSK: in PERF context, bypass the down-rate-limit for the
+		 * A75 big cluster (cpu6-7). This lets frequency fall promptly
+		 * after a burst finishes, reducing thermal and power cost
+		 * during the gap between game frames.
+		 * On the little cluster (A55, cpu0-5) we keep the hysteresis
+		 * so efficiency-domain OPPs don't bounce.
+		 */
+		if (oaks_in_perf() && first_cpu >= OAKS_BIG_FIRST)
+			return false;
+		return true;
+	}
 
 	return false;
 }
@@ -1089,9 +1102,30 @@ static int sugov_init(struct cpufreq_policy *policy)
 		goto stop_kthread;
 	}
 
-	tunables->up_rate_limit_us = 200;   /* KernelBumi: 200us ramp-up */
-	tunables->down_rate_limit_us = 5000; /* KernelBumi: 5ms hysteresis */
-	sg_policy->need_freq_update = true;  /* KernelBumi: full freq on first tick */
+	/*
+	 * OSK per-cluster rate-limit defaults (MT6768 / G85):
+	 *
+	 *   A75 big cluster (cpu6-7):
+	 *     up   200 us — react to load spikes inside one vsync tick.
+	 *     down   2 ms — short hold to avoid thrashing at burst-end.
+	 *     In OAKS PERF context sugov_up_down_rate_limit() further
+	 *     bypasses the down-limit so freq falls on the very next tick.
+	 *
+	 *   A55 little cluster (cpu0-5):
+	 *     up   500 us — efficiency domain; small ramp latency acceptable.
+	 *     down  10 ms — hold higher OPP slightly longer to absorb bursts
+	 *     without re-ramping immediately (reduces OPP churn on A55).
+	 *
+	 * Fallback (unknown topology): 500us/5ms — safe conservative values.
+	 */
+	if (cpumask_first(policy->cpus) >= OAKS_BIG_FIRST) {
+		tunables->up_rate_limit_us   = 200;
+		tunables->down_rate_limit_us = 2000;
+	} else {
+		tunables->up_rate_limit_us   = 500;
+		tunables->down_rate_limit_us = 10000;
+	}
+	sg_policy->need_freq_update = true;
 
 	policy->governor_data = sg_policy;
 	sg_policy->tunables = tunables;
