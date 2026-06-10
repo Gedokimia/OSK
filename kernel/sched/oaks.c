@@ -87,14 +87,18 @@ EXPORT_SYMBOL(oaks_param_table);
  * Scheduler globals written by OAKS
  * ----------------------------------------------------------------------- */
 
+/* CFS tunables — non-static globals in kernel/sched/fair.c */
 extern unsigned int sysctl_sched_latency;
 extern unsigned int sysctl_sched_min_granularity;
 extern unsigned int sysctl_sched_wakeup_granularity;
-extern unsigned int sched_nr_latency;
-extern unsigned int sysctl_sched_pelt_halflife;
+/*
+ * sched_nr_latency: static in fair.c — cannot extern. fair.c
+ * recomputes it whenever sysctl_sched_latency is written.
+ * sysctl_sched_pelt_halflife: does not exist in this 4.19 tree.
+ */
 
 #ifdef CONFIG_SCHED_BORE
-extern unsigned int sched_burst_penalty_scale;
+extern unsigned int sched_burst_penalty_scale; /* uint __read_mostly */
 #endif
 
 /* LMK enable flag — writable from sysfs */
@@ -222,33 +226,57 @@ EXPORT_SYMBOL(oaks_notify_perf_scene);
  *   ≤ 0  → BATTERY
  * ----------------------------------------------------------------------- */
 
-/* Update big-cluster utilization snapshot — called from oaks_tick */
+/*
+ * oaks_sample_big_cluster — PELT util of the A75 big cluster.
+ *
+ * BUG (was): rq->cpu_load[0] = rq->cfs.load.weight in NICE_0_LOAD
+ *   units (~1M on 64-bit). For idle CPUs weight=0, so util was always
+ *   0. cpu_load[] is a scheduling weight, NOT a utilisation value.
+ *
+ * FIX: cpu_util_cfs(rq) returns cfs.avg.util_avg — PELT EMA in
+ *   [0, SCHED_CAPACITY_SCALE=1024]. Divide by capacity_orig_of(cpu)
+ *   to get true utilisation%, accounting for A75 > A55 capacity.
+ *   Add cpu_util_rt() so SCHED_FIFO render threads are counted.
+ */
 static void oaks_sample_big_cluster(void)
 {
-	unsigned int util = 0, nr = 0;
+	unsigned long util_sum = 0;
+	unsigned int nr = 0, avg_pct;
 	int cpu;
 
 	for (cpu = OAKS_BIG_FIRST; cpu <= OAKS_BIG_LAST; cpu++) {
 		struct rq *rq = cpu_rq(cpu);
+		unsigned long cap  = capacity_orig_of(cpu);
+		unsigned long util = cpu_util_cfs(rq) + cpu_util_rt(rq);
 
-		util += rq->cpu_load[0]; /* load[0] = 1-tick EMA */
-		nr   += rq->nr_running;
+		util = min(util, cap);
+		if (cap > 0)
+			util_sum += util * 100 / cap;
+		nr += rq->nr_running;
 	}
-	/* Normalise to [0, 100] — cpu_load is in NICE_0_LOAD units (1024) */
-	util = (util * 100) / (NICE_0_LOAD * (OAKS_BIG_LAST - OAKS_BIG_FIRST + 1));
-	WRITE_ONCE(oaks.sig.big_cluster_util, min(util, 100U));
+
+	avg_pct = util_sum / (OAKS_BIG_LAST - OAKS_BIG_FIRST + 1);
+	WRITE_ONCE(oaks.sig.big_cluster_util, min(avg_pct, 100U));
 	WRITE_ONCE(oaks.sig.big_nr_running,   nr);
 }
 
-/* Read PSI mem-some 10s average into oaks.sig — PSI avg[] is fixed-point /1000 */
+/*
+ * oaks_sample_psi_mem — read PSI MEM_SOME pressure from psi_system.
+ *
+ * psi_group.avg[state][window] layout (kernel/sched/psi.c):
+ *   state:  IO_SOME=0 IO_FULL=1 MEM_SOME=2 MEM_FULL=3 CPU_SOME=4
+ *   window: [0]=10s [1]=60s [2]=300s  (EXP_10s/60s/300s macros)
+ *
+ * Units: FIXED_1=2048 = 100% stall (FSHIFT=11, same as load_avg).
+ *   10%=205, 5%=102. Updated every 2s by avgs_work.
+ *
+ * NOTE: the old comment said 'fixed-point /1000' — wrong.
+ *   It also claimed index [1]=10s — wrong, [0]=10s.
+ */
 static void oaks_sample_psi_mem(void)
 {
 #ifdef CONFIG_PSI
-	/*
-	 * psi_system.avg[PSI_MEM_SOME][1] = 10s average.
-	 * Index 0=10s, 1=60s, 2=300s in this kernel's psi_avgs_work().
-	 * (Verify against kernel/sched/psi.c: EXP_s(10)=EXP_10s.)
-	 */
+	/* PSI_MEM_SOME=2, [0]=10s avg, units FIXED_1=2048 */
 	unsigned long avg = READ_ONCE(psi_system.avg[PSI_MEM_SOME][0]);
 	WRITE_ONCE(oaks.sig.psi_mem_some_avg, avg);
 #else
@@ -256,77 +284,124 @@ static void oaks_sample_psi_mem(void)
 #endif
 }
 
-/* Evaluate all signals and return the recommended ctx — lock-free reads */
+/*
+ * oaks_detect_ctx — multi-signal scorer with per-context hysteresis.
+ *
+ * Score table:
+ *   Touch <300ms   +3 | <1500ms  +2 | <4000ms  +1 | >8000ms  -3
+ *   A75 util ≥70%  +3 | ≥40%     +2 | nr≥2     +1
+ *   PSI mem ≥10%   -2
+ *   Active perf scene → hard PERF (bypass scoring)
+ *
+ * Hysteresis table (prevents rapid BALANCED↔RESPONSIVE oscillation):
+ *   To UPGRADE from cur ctx, score must exceed the upper threshold.
+ *   To DOWNGRADE, score must fall below the lower threshold.
+ *   This is encoded as per-ctx switch cases below.
+ */
 static enum oaks_ctx oaks_detect_ctx(void)
 {
-	unsigned long now = jiffies;
 	unsigned long touch_age;
+	unsigned int big_util, big_nr;
+	unsigned long psi_avg;
+	enum oaks_ctx cur;
 	int score = 0;
 
-	/* Hard override: active perf scene → always PERF */
 	if (READ_ONCE(oaks.perf.main_pid) != 0)
 		return OAKS_CTX_PERF;
 
+	/* Snapshot all signals once */
+	touch_age = jiffies - READ_ONCE(oaks.sig.last_touch_j);
+	big_util   = READ_ONCE(oaks.sig.big_cluster_util);
+	big_nr     = READ_ONCE(oaks.sig.big_nr_running);
+	psi_avg    = READ_ONCE(oaks.sig.psi_mem_some_avg);
+	cur        = (enum oaks_ctx)atomic_read(&oaks.ctx);
+
 	/* Touch recency */
-	touch_age = now - READ_ONCE(oaks.sig.last_touch_j);
-	if (touch_age < msecs_to_jiffies(500))
+	if (touch_age < msecs_to_jiffies(300))
 		score += 3;
-	else if (touch_age < msecs_to_jiffies(2000))
-		score += 1;
-	else if (touch_age > msecs_to_jiffies(5000))
-		score -= 4;
-
-	/* Big cluster load */
-	if (READ_ONCE(oaks.sig.big_cluster_util) >= 70)
+	else if (touch_age < msecs_to_jiffies(1500))
 		score += 2;
-	if (READ_ONCE(oaks.sig.big_nr_running) >= 2)
+	else if (touch_age < msecs_to_jiffies(4000))
+		score += 1;
+	else if (touch_age > msecs_to_jiffies(8000))
+		score -= 3;
+
+	/* A75 big cluster utilisation (now via PELT, not cpu_load) */
+	if (big_util >= 70)
+		score += 3;
+	else if (big_util >= 40)
+		score += 2;
+	if (big_nr >= 2)
 		score += 1;
 
-	/* Memory pressure: high PSI → stay low to let reclaim run */
-	if (READ_ONCE(oaks.sig.psi_mem_some_avg) >= OAKS_PSI_MEM_SOME_THRESH)
-		score -= 1;
+	/* Memory pressure — penalise harder than before */
+	if (psi_avg >= OAKS_PSI_MEM_SOME_THRESH)
+		score -= 2;
 
-	if (score >= 5)
-		return OAKS_CTX_PERF;
-	if (score >= 3)
-		return OAKS_CTX_RESPONSIVE;
-	if (score >= 1)
-		return OAKS_CTX_BALANCED;
-	return OAKS_CTX_BATTERY;
+	/* Hysteresis: upgrade/downgrade require score past boundary ±1 */
+	switch (cur) {
+	case OAKS_CTX_PERF:
+		if (score >= 5) return OAKS_CTX_PERF;
+		if (score >= 3) return OAKS_CTX_RESPONSIVE;
+		if (score >= 0) return OAKS_CTX_BALANCED;
+		return OAKS_CTX_BATTERY;
+	case OAKS_CTX_RESPONSIVE:
+		if (score >= 7) return OAKS_CTX_PERF;
+		if (score >= 3) return OAKS_CTX_RESPONSIVE;
+		if (score >= 0) return OAKS_CTX_BALANCED;
+		return OAKS_CTX_BATTERY;
+	case OAKS_CTX_BALANCED:
+		if (score >= 7) return OAKS_CTX_PERF;
+		if (score >= 5) return OAKS_CTX_RESPONSIVE;
+		if (score >= 1) return OAKS_CTX_BALANCED;
+		return OAKS_CTX_BATTERY;
+	case OAKS_CTX_BATTERY:
+	default:
+		if (score >= 7) return OAKS_CTX_PERF;
+		if (score >= 5) return OAKS_CTX_RESPONSIVE;
+		if (score >= 2) return OAKS_CTX_BALANCED;
+		return OAKS_CTX_BATTERY;
+	}
 }
 
 /*
- * oaks_tick - called from scheduler_tick() on every CPU.
- * Sampling and ctx transitions are rate-limited to CPU0 + once per 100ms.
+ * oaks_tick — called from scheduler_tick() on every CPU.
+ *
+ * ROOT CAUSE of big_util/psi always 0:
+ *   Sampling was gated behind static_branch_unlikely(&oaks_active).
+ *   That key is only enabled when ctx > BALANCED. On an idle device
+ *   (ctx=BALANCED, key=false) the function returned before any sampling
+ *   occurred. oaks_detect_ctx() always read stale zeros → ctx never
+ *   changed from load signals, only from touch events.
+ *
+ * FIX: rate-limit gate runs BEFORE the static_key check.
+ *   Sampling is always unconditional. The static_key fast-path in
+ *   oaks_in_perf() / oaks_is_responsive() is unaffected.
+ *
+ * ALSO FIXED: oaks_tick() was never called — it was not wired into
+ *   scheduler_tick(). Wire-up is in kernel/sched/core.c.
  */
+#define OAKS_EVAL_INTERVAL_J	(HZ / 10)  /* 100 ms */
+
 void oaks_tick(void)
 {
 	static unsigned long next_eval_j;
 
-	/* Fast exit on non-elevated ctx when static key is off */
-	if (!static_branch_unlikely(&oaks_active)) {
-		/* Still need to handle RESPONSIVE timeout even without key */
-		enum oaks_ctx ctx = atomic_read(&oaks.ctx);
-		if (ctx == OAKS_CTX_RESPONSIVE &&
-		    time_after(jiffies, READ_ONCE(oaks.sig.last_touch_j) +
-				READ_ONCE(oaks.responsive_timeout_j)))
-			oaks_set_ctx(OAKS_CTX_BALANCED);
-		return;
-	}
-
-	/* Rate-limit eval to CPU0 once per ~100ms */
-	if (!cpu_is_offline(0) && smp_processor_id() != 0)
-		return;
+	/*
+	 * Rate-limit to one eval per 100ms from one CPU.
+	 * MUST be before the static_key check — sampling runs in ALL contexts.
+	 */
 	if (time_before(jiffies, READ_ONCE(next_eval_j)))
 		return;
-	WRITE_ONCE(next_eval_j, jiffies + HZ / 10);
+	if (cpu_online(0) && smp_processor_id() != 0)
+		return;
+	WRITE_ONCE(next_eval_j, jiffies + OAKS_EVAL_INTERVAL_J);
 
 	oaks_sample_big_cluster();
 	oaks_sample_psi_mem();
 
 	oaks_set_ctx(oaks_detect_ctx());
 
-	/* Opportunistic LMK check when memory looks stressed */
 	if (oaks_lmk_enabled &&
 	    READ_ONCE(oaks.sig.psi_mem_some_avg) >= OAKS_PSI_MEM_SOME_THRESH)
 		oaks_lmk_pressure_check();
