@@ -91,6 +91,7 @@ extern unsigned int sysctl_sched_latency;
 extern unsigned int sysctl_sched_min_granularity;
 extern unsigned int sysctl_sched_wakeup_granularity;
 extern unsigned int sched_nr_latency;
+extern unsigned int sysctl_sched_pelt_halflife;
 
 #ifdef CONFIG_SCHED_BORE
 extern unsigned int sched_burst_penalty_scale;
