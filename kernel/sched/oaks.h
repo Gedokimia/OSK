@@ -132,14 +132,35 @@ static inline bool oaks_is_responsive(void)
 }
 
 /*
+ * oaks_oom_guard - return true if the OOM killer must skip @p.
+ *
+ * Only protects the active perf scene's main and render threads.
+ * All other processes are fair game for the OOM killer.
+ * Never protects adj <= 0 (foreground) — the OOM killer already
+ * handles those correctly via oom_score_adj.
+ *
+ * Called from mm/oom_kill.c under task_lock(p), RCU read-side.
+ * Must be safe to call from any context — only uses atomic reads.
+ */
+static inline bool oaks_oom_guard(struct task_struct *p)
+{
+	if (!oaks_in_perf())
+		return false;
+	if (!p->signal)
+		return false;
+	return (p->tgid == READ_ONCE(oaks.perf.main_pid) ||
+		p->pid  == READ_ONCE(oaks.perf.render_pid));
+}
+
+/*
  * oaks_want_big_cluster - hint to place @p on A75 cluster.
  */
 static inline bool oaks_want_big_cluster(struct task_struct *p)
 {
 	if (!oaks_in_perf())
 		return false;
-	return (p->pid  == oaks.perf.render_pid ||
-		p->tgid == oaks.perf.main_pid);
+	return (p->pid  == READ_ONCE(oaks.perf.render_pid) ||
+		p->tgid == READ_ONCE(oaks.perf.main_pid));
 }
 
 #endif /* _KERNEL_SCHED_OAKS_H */
