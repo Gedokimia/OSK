@@ -71,7 +71,15 @@ static long ratelimit_pages = 32;
 /*
  * Start background writeback (via writeback threads) at this percentage
  */
-int dirty_background_ratio = 10; /* KernelBumi: more cache before bg writeback */
+/*
+ * OSK dirty_background_ratio = 5%:
+ * Background writeback starts earlier. On eMMC, letting dirty pages
+ * accumulate to 10% of RAM (300MB+ on 3GB) causes a large writeback
+ * burst that stalls foreground IO and causes jank. Starting writeback
+ * at 5% keeps the writeback queue shallow and smooths IO latency.
+ * Works in tandem with dirty_writeback_interval = 200cs (2s).
+ */
+int dirty_background_ratio = 5;
 
 /*
  * dirty_background_bytes starts at 0 (disabled) so that it is a function of
@@ -88,7 +96,15 @@ int vm_highmem_is_dirtyable;
 /*
  * The generator of dirty data starts writeback at this percentage
  */
-int vm_dirty_ratio = 20; /* KernelBumi: higher dirty threshold for eMMC burst */
+/*
+ * OSK vm_dirty_ratio = 10%:
+ * Hard throttle threshold. Reduced from 20% to 10% to prevent
+ * write-heavy workloads (app install, large file copy) from
+ * accumulating 600MB+ of dirty pages that then flush as a single
+ * blocking IO burst. At 10% the kernel throttles writers earlier,
+ * producing steadier eMMC throughput and lower write latency variance.
+ */
+int vm_dirty_ratio = 10;
 
 /*
  * vm_dirty_bytes starts at 0 (disabled) so that it is a function of
@@ -99,14 +115,30 @@ unsigned long vm_dirty_bytes;
 /*
  * The interval between `kupdate'-style writebacks
  */
-unsigned int dirty_writeback_interval = 1 * 100; /* centiseconds */
+/*
+ * OSK dirty_writeback_interval = 200cs (2 seconds):
+ * Upstream default is 500cs (5s); KernelBumi set it to 100cs (1s).
+ * 1s causes wdirty_writeback to wake up bdi_writeback kworkers every
+ * second even under light load, burning CPU in the power-saving
+ * window between user interactions. 200cs (2s) reduces kworker
+ * wakeups by 50% while keeping dirty data age bounded.
+ */
+unsigned int dirty_writeback_interval = 2 * 100; /* centiseconds */
 
 EXPORT_SYMBOL_GPL(dirty_writeback_interval);
 
 /*
  * The longest time for which data is allowed to remain dirty
  */
-unsigned int dirty_expire_interval = 5 * 100; /* centiseconds */
+/*
+ * OSK dirty_expire_interval = 300cs (3 seconds):
+ * Pages dirtied more than 3s ago are eligible for writeback.
+ * Reduced from 500cs (5s) to match the 200cs writeback interval
+ * with a 1s grace margin. Prevents pages from staying dirty for
+ * longer than 3s even under low-activity conditions, which matters
+ * for F2FS journal coherence and EXT4 journal replay safety.
+ */
+unsigned int dirty_expire_interval = 3 * 100; /* centiseconds */
 
 /*
  * Flag that makes the machine dump writes/reads and block dirtyings.

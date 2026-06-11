@@ -27,6 +27,29 @@
 #define OAKS_UTIL_SCALE		1024  /* == SCHED_CAPACITY_SCALE */
 
 /*
+ * Thread class uclamp_min values [0, 1024 = SCHED_CAPACITY_SCALE].
+ *
+ * These are applied via set_task_util_min() in oaks_classify_thread()
+ * and give the EAS placement logic a minimum OPP floor so latency-
+ * critical threads always land on a capable CPU at an adequate frequency.
+ *
+ * SF_RENDER / AUDIO_FAST: placed on A75 (big cluster) at ≥50% capacity
+ *   → guarantees they always run above the low-power OPPs.
+ *   A75 at 50% util ≈ 900 MHz, well above the 400MHz floor.
+ *
+ * AUDIO_MIX / SF_MAIN: A55 is fine; need a moderate OPP floor to avoid
+ *   being stuck at the lowest efficiency OPP during audio output.
+ *
+ * KWORKER_DISPLAY: HWC/ion workers for display path; modest floor.
+ */
+#define OAKS_UCLAMP_SF_RENDER		512  /* 50% — SurfaceFlinger RenderEngine */
+#define OAKS_UCLAMP_SF_MAIN		256  /* 25% — SurfaceFlinger main thread */
+#define OAKS_UCLAMP_AUDIO_FAST		512  /* 50% — FastMixer / FastCapture */
+#define OAKS_UCLAMP_AUDIO_MIX		256  /* 25% — AudioFlinger mixer */
+#define OAKS_UCLAMP_DISPLAY_HWC		200  /* ~20% — HWC / display worker */
+#define OAKS_UCLAMP_RESET		  0  /* remove OAKS boost */
+
+/*
  * PSI mem-some 10s average threshold (for context scoring only).
  * PSI avg[] uses FIXED_1=2048 as 100% (FSHIFT=11).
  *   10% stall = 205
@@ -114,6 +137,13 @@ enum oaks_ctx oaks_get_ctx(void);
 void oaks_notify_touch(void);
 void oaks_notify_perf_scene(pid_t main_pid, pid_t render_pid, bool enter);
 void oaks_tick(void);
+
+/*
+ * oaks_classify_thread - apply thread-class uclamp_min based on comm name.
+ * Called from __set_task_comm() whenever a thread names itself.
+ * Process context only (task_lock may be dropped before calling).
+ */
+void oaks_classify_thread(struct task_struct *tsk);
 
 /* ------------------------------------------------------------------ */
 

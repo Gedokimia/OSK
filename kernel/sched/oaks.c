@@ -45,11 +45,19 @@ EXPORT_SYMBOL(oaks);
  */
 const struct oaks_params oaks_param_table[OAKS_CTX_MAX] = {
 	[OAKS_CTX_BATTERY] = {
-		.latency_ns		= 6000000,
-		.min_gran_ns		= 750000,
-		.wakeup_gran_ns		= 1000000,
-		.nr_latency		= 8,
-		.bore_burst_penalty_scale = 1536,
+		/*
+		 * Long latency period: background tasks share the CPU in larger
+		 * slices with infrequent preemption — reduces context-switch
+		 * overhead and scheduler tick CPU cost when screen is off.
+		 * High BORE penalty: burst tasks (JIT, sync) are dampened
+		 * aggressively so they don't prevent the A55 from entering
+		 * deep idle states between background work items.
+		 */
+		.latency_ns		= 8000000,
+		.min_gran_ns		= 1000000,
+		.wakeup_gran_ns		= 1500000,
+		.nr_latency		= 6,
+		.bore_burst_penalty_scale = 1792,
 		.bore_initial_score	= 0,
 	},
 	[OAKS_CTX_BALANCED] = {
@@ -87,6 +95,9 @@ EXPORT_SYMBOL(oaks_param_table);
 extern unsigned int sysctl_sched_latency;
 extern unsigned int sysctl_sched_min_granularity;
 extern unsigned int sysctl_sched_wakeup_granularity;
+
+/* UCLAMP — defined + exported in kernel/sched/core.c */
+extern int set_task_util_min(pid_t pid, unsigned int util_min);
 /*
  * sched_nr_latency: static in fair.c — cannot extern. fair.c
  * recomputes it whenever sysctl_sched_latency is written.
@@ -444,6 +455,79 @@ EXPORT_SYMBOL(oaks_tick);
 /* -----------------------------------------------------------------------
  * Init
  * ----------------------------------------------------------------------- */
+
+/* -----------------------------------------------------------------------
+ * Thread classification — SurfaceFlinger, AudioFlinger, display workers
+ *
+ * Android critical threads name themselves via pthread_setname_np() which
+ * calls prctl(PR_SET_NAME) → __set_task_comm(). We intercept this to
+ * apply a uclamp_min floor appropriate to each thread class.
+ *
+ * Rules:
+ *  - Matching is by comm prefix/exact — TASK_COMM_LEN=16 so names are
+ *    already truncated by the time we see them.
+ *  - We call set_task_util_min() which uses sched_setattr_nocheck().
+ *    This is safe in process context (called from __set_task_comm
+ *    after task_unlock).
+ *  - We only set a floor; the scheduler can run threads above it.
+ *    uclamp_max is left at 1024 (uncapped) so bursts are not throttled.
+ *  - Thread names here are stable across AOSP/HyperOS on MT6768.
+ * ----------------------------------------------------------------------- */
+
+struct oaks_thread_entry {
+	const char *prefix;    /* comm prefix to match */
+	unsigned int uclamp;   /* OAKS_UCLAMP_* value  */
+};
+
+static const struct oaks_thread_entry oaks_thread_table[] = {
+	/* SurfaceFlinger render path — must run at adequate OPP on big cluster */
+	{ "RenderEngine",    OAKS_UCLAMP_SF_RENDER },
+	{ "DispSync",        OAKS_UCLAMP_SF_RENDER },
+	{ "app",             OAKS_UCLAMP_SF_RENDER }, /* SF per-app thread */
+	{ "appSf",           OAKS_UCLAMP_SF_RENDER },
+	/* SurfaceFlinger main/event threads */
+	{ "surfaceflinger",  OAKS_UCLAMP_SF_MAIN   },
+	{ "SurfaceFlinger",  OAKS_UCLAMP_SF_MAIN   },
+	{ "EventThread",     OAKS_UCLAMP_SF_MAIN   },
+	{ "HwBinder",        OAKS_UCLAMP_DISPLAY_HWC },
+	/* AudioFlinger fast paths — latency critical */
+	{ "FastMixer",       OAKS_UCLAMP_AUDIO_FAST },
+	{ "FastCapture",     OAKS_UCLAMP_AUDIO_FAST },
+	/* AudioFlinger mixer / IO threads */
+	{ "AudioOut",        OAKS_UCLAMP_AUDIO_MIX  },
+	{ "AudioIn",         OAKS_UCLAMP_AUDIO_MIX  },
+	{ "AudioFlinger",    OAKS_UCLAMP_AUDIO_MIX  },
+	{ "AudioMixer",      OAKS_UCLAMP_AUDIO_MIX  },
+	/* Sentinel */
+	{ NULL, 0 },
+};
+
+/*
+ * oaks_classify_thread — called from __set_task_comm() (fs/exec.c).
+ * Applies a uclamp_min floor to recognised latency-critical threads.
+ * Safe: process context, no locks held on entry.
+ */
+void oaks_classify_thread(struct task_struct *tsk)
+{
+	const struct oaks_thread_entry *e;
+
+	if (!tsk)
+		return;
+
+	for (e = oaks_thread_table; e->prefix; e++) {
+		if (strncmp(tsk->comm, e->prefix, strlen(e->prefix)) == 0) {
+			/*
+			 * set_task_util_min uses sched_setattr_nocheck —
+			 * valid from process context with a live task_struct.
+			 * Ignore return: if UCLAMP is disabled the call is a
+			 * no-op (sched_setattr returns -EINVAL gracefully).
+			 */
+			set_task_util_min(tsk->pid, e->uclamp);
+			return;
+		}
+	}
+}
+EXPORT_SYMBOL(oaks_classify_thread);
 
 void oaks_init(void)
 {

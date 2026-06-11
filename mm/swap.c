@@ -1071,5 +1071,13 @@ void __init swap_setup(void)
 	 * Flash storage (eMMC/UFS): single-page reads avoid read amplification.
 	 * page_cluster=0 disables readahead clustering entirely.
 	 */
+	/*
+	 * OSK page_cluster=0: disable swap readahead clustering.
+	 * With ZRAM as the swap device, sequential readahead is wasteful:
+	 * ZRAM is random-access at near-RAM speeds and has no rotational
+	 * or seek cost. Clustering would read extra compressed pages into
+	 * RAM unnecessarily, wasting both RAM and decompression CPU time.
+	 * Each page fault decompresses exactly the one needed page.
+	 */
 	page_cluster = 0;
 }

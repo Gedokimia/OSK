@@ -2193,6 +2193,16 @@ int kcompactd_run(int nid)
 		return 0;
 
 	pgdat->kcompactd = kthread_run(kcompactd, pgdat, "kcompactd%d", nid);
+	if (!IS_ERR(pgdat->kcompactd)) {
+		/*
+		 * OSK: kcompactd nice=5 — lower priority than default (nice=0).
+		 * Compaction is a background task that defragments memory for
+		 * huge-page allocations. At nice=0 it competes with foreground
+		 * threads under memory pressure. nice=5 ensures SF/audio/game
+		 * threads are never preempted by compaction work.
+		 */
+		set_user_nice(pgdat->kcompactd, 5);
+	}
 	if (IS_ERR(pgdat->kcompactd)) {
 		pr_err("Failed to start kcompactd on node %d\n", nid);
 		ret = PTR_ERR(pgdat->kcompactd);

@@ -171,7 +171,17 @@ struct scan_control {
 /*
  * From 0 .. 200.  Higher means more swappy.
  */
-int vm_swappiness = 100;	/* ZRAM: aggressively swap anon, keep file cache */
+/*
+ * OSK vm_swappiness = 60:
+ * With ZRAM enabled, we want to reclaim anon pages to ZRAM (fast,
+ * compressed) before evicting file-backed pages (require eMMC re-read).
+ * 100 caused excessive kswapd wakeups and kworker CPU spikes because
+ * the kernel tried to swap every anonymous page even at low pressure.
+ * 60 balances ZRAM utilisation vs CPU cost of compressing pages.
+ * Android lmkd kills cached processes before we reach the swap path,
+ * so swappiness primarily affects background processes.
+ */
+int vm_swappiness = 60;
 /*
  * The total number of pages which are beyond the high watermark within all
  * zones.
@@ -6749,7 +6759,13 @@ int kswapd_run(int nid)
 
 	pgdat->kswapd = kthread_run(kswapd, pgdat, "kswapd%d", nid);
 	if (!IS_ERR(pgdat->kswapd))
-		set_user_nice(pgdat->kswapd, -2); /* KernelBumi: faster reclaim response */
+		/*
+		 * OSK: nice=-2 keeps kswapd above SCHED_NORMAL user tasks
+		 * (nice=0) so reclaim proceeds promptly under memory pressure
+		 * without starving SF/audio threads at their default nice=-1.
+		 * Do not go below -5 or kswapd can preempt render threads.
+		 */
+		set_user_nice(pgdat->kswapd, -2);
 	if (IS_ERR(pgdat->kswapd)) {
 		/* failure at boot is fatal */
 		BUG_ON(system_state < SYSTEM_RUNNING);
