@@ -321,9 +321,23 @@ compound_page_dtor * const compound_page_dtors[] = {
  * allocations below this point, only high priority ones. Automatically
  * tuned according to the amount of memory in the system.
  */
-int min_free_kbytes = 16384; /* OSK: 16MB default (3GB G85), adjusted at boot */
+/*
+ * OSK: min_free_kbytes = 16MB default, adjusted at boot by
+ * osk_watermark_init() based on detected RAM size (3GB vs 4GB).
+ * Ensures the page allocator keeps enough free pages to handle
+ * sudden allocation bursts from SF/game without triggering direct
+ * reclaim on the allocation path (which stalls the caller).
+ */
+int min_free_kbytes = 16384;
 int user_min_free_kbytes = -1;
-int watermark_scale_factor = 125; /* OSK: 12.5% — balanced for 3/4GB */
+/*
+ * OSK watermark_scale_factor = 125 (12.5%):
+ * Sets the gap between min/low/high watermarks as a fraction of
+ * total managed pages. 125 gives kswapd 12.5% of RAM as headroom
+ * before the allocator starts direct reclaim. On 3GB this is ~384MB,
+ * large enough to absorb app-launch allocation spikes without stalling.
+ */
+int watermark_scale_factor = 125;
 
 /*
  * Extra memory for the system to try freeing. Used to temporarily

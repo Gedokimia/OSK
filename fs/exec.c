@@ -64,6 +64,9 @@
 #include <linux/vmalloc.h>
 
 #include <linux/uaccess.h>
+#ifdef CONFIG_OAKS
+#include "../kernel/sched/oaks.h"
+#endif
 #include <asm/mmu_context.h>
 #include <asm/tlb.h>
 
@@ -1257,6 +1260,14 @@ void __set_task_comm(struct task_struct *tsk, const char *buf, bool exec)
 	trace_task_rename(tsk, buf);
 	strlcpy(tsk->comm, buf, sizeof(tsk->comm));
 	task_unlock(tsk);
+#ifdef CONFIG_OAKS
+	/*
+	 * OAKS: apply uclamp_min floors to SF/audio/display threads.
+	 * Called after task_unlock so oaks_classify_thread() can call
+	 * sched_setattr_nocheck() without holding task_lock.
+	 */
+	oaks_classify_thread(tsk);
+#endif
 	perf_event_comm(tsk, exec);
 }
 

@@ -91,7 +91,18 @@ static struct kernel_param_ops zswap_enabled_param_ops = {
 module_param_cb(enabled, &zswap_enabled_param_ops, &zswap_enabled, 0644);
 
 /* Crypto compressor to use */
-#define ZSWAP_COMPRESSOR_DEFAULT "lzo"
+/*
+ * OSK: use lz4 instead of lzo as the default ZSWAP compressor.
+ * lz4 decompresses ~2× faster than lzo on ARM Cortex-A55/A75,
+ * which matters more than compression ratio for swap performance:
+ * decompression occurs on every page fault for swapped-out pages
+ * (synchronous, on the faulting CPU) while compression is async
+ * (kswapd/kworker). lz4 compresses slightly worse than lzo but
+ * the decompression speed advantage dominates on A55.
+ * earth_defconfig sets CONFIG_ZRAM_DEF_COMP="lz4" for ZRAM;
+ * keeping ZSWAP consistent avoids having two compressor contexts.
+ */
+#define ZSWAP_COMPRESSOR_DEFAULT "lz4"
 static char *zswap_compressor = ZSWAP_COMPRESSOR_DEFAULT;
 static int zswap_compressor_param_set(const char *,
 				      const struct kernel_param *);
@@ -104,7 +115,16 @@ module_param_cb(compressor, &zswap_compressor_param_ops,
 		&zswap_compressor, 0644);
 
 /* Compressed storage zpool to use */
-#define ZSWAP_ZPOOL_DEFAULT "zbud"
+/*
+ * OSK: use z3fold instead of zbud as the default ZSWAP zpool.
+ * zbud stores at most 2 pages per allocation slot (up to 50% overhead).
+ * z3fold stores up to 3 compressed pages per slot (~33% overhead),
+ * increasing the effective ZSWAP pool capacity by ~20-30% for the
+ * same memory footprint. This directly improves multitasking:
+ * more pages fit in the ZSWAP pool before writeback to ZRAM.
+ * z3fold is stable and used in production Android GKI kernels.
+ */
+#define ZSWAP_ZPOOL_DEFAULT "z3fold"
 static char *zswap_zpool_type = ZSWAP_ZPOOL_DEFAULT;
 static int zswap_zpool_param_set(const char *, const struct kernel_param *);
 static struct kernel_param_ops zswap_zpool_param_ops = {
@@ -115,7 +135,16 @@ static struct kernel_param_ops zswap_zpool_param_ops = {
 module_param_cb(zpool, &zswap_zpool_param_ops, &zswap_zpool_type, 0644);
 
 /* The maximum percentage of memory that the compressed pool can occupy */
-static unsigned int zswap_max_pool_percent = 30;	/* More RAM as zswap pool before writeback */
+/*
+ * OSK: cap ZSWAP pool at 25% of RAM (down from 30%).
+ * On a 3GB device, 30% = 921MB reserved for ZSWAP. This can
+ * crowd out active file/anon pages and force premature reclaim.
+ * 25% = 768MB is sufficient to hold several hundred compressed
+ * background app pages while leaving more headroom for active
+ * workloads. Combined with z3fold's better packing, effective
+ * multitasking capacity is unchanged or improved.
+ */
+static unsigned int zswap_max_pool_percent = 25;
 module_param_named(max_pool_percent, zswap_max_pool_percent, uint, 0644);
 
 /* Enable/disable handling same-value filled pages (enabled by default) */
