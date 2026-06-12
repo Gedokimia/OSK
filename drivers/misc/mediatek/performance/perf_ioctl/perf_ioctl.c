@@ -10,6 +10,7 @@
 #endif
 
 #ifdef CONFIG_OAKS
+#include <linux/jiffies.h>
 #include "../../../../kernel/sched/oaks.h"
 #endif
 
@@ -326,6 +327,28 @@ static long device_ioctl(struct file *filp,
 			fpsgo_notify_qudeq_fp(1,
 					msgKM->start, msgKM->tid,
 					msgKM->identifier);
+#ifdef CONFIG_OAKS
+		if (msgKM->start && msgKM->tid > 0) {
+			/*
+			 * OSK: start=1 fires every frame (60-120Hz). This must
+			 * be a cheap heartbeat ONLY — a single WRITE_ONCE.
+			 * Full registration (uclamp + ctx=PERF) happens once
+			 * per scene lifecycle via FPSGO_QUEUE_CONNECT below.
+			 * Calling oaks_notify_perf_scene() here would invoke
+			 * set_task_util_min() -> sched_setattr_nocheck() ->
+			 * rq_lock every frame — unacceptable overhead.
+			 */
+			WRITE_ONCE(oaks.sig.last_render_wake_j, jiffies);
+		} else if (!msgKM->start) {
+			/*
+			 * OSK: start=0 is producer-end — the render thread
+			 * finished this frame (eglSwapBuffers/vkQueuePresent).
+			 * Feeds oaks_notify_vsync()'s deadline-miss detection.
+			 * oaks_notify_frame_end() is a single WRITE_ONCE.
+			 */
+			oaks_notify_frame_end();
+		}
+#endif
 		break;
 	case FPSGO_DEQUEUE:
 		if (fpsgo_notify_qudeq_fp)
@@ -337,6 +360,27 @@ static long device_ioctl(struct file *filp,
 		if (fpsgo_notify_connect_fp)
 			fpsgo_notify_connect_fp(msgKM->tid,
 					msgKM->connectedAPI, msgKM->identifier);
+#ifdef CONFIG_OAKS
+		/*
+		 * OSK: FPSGO_QUEUE_CONNECT is issued once when a render thread
+		 * connects to a buffer queue — i.e. game/app scene start.
+		 * connectedAPI > 0 means an active GL/Vulkan connection.
+		 * connectedAPI == 0 means disconnect (scene exit).
+		 *
+		 * Guard: only clear the perf scene if THIS tid is the
+		 * currently-registered render thread. Without this guard,
+		 * a background app's QUEUE_DISCONNECT (connectedAPI==0)
+		 * would clear the FOREGROUND app's active perf scene if
+		 * disconnects from multiple apps interleave.
+		 */
+		if (msgKM->connectedAPI > 0 && msgKM->tid > 0) {
+			oaks_notify_perf_scene(current->tgid,
+					      (pid_t)msgKM->tid, true);
+		} else if (msgKM->connectedAPI == 0 &&
+			   (pid_t)msgKM->tid == READ_ONCE(oaks.perf.render_pid)) {
+			oaks_notify_perf_scene(0, 0, false);
+		}
+#endif
 		break;
 	case FPSGO_BQID:
 		if (fpsgo_notify_bqid_fp)
@@ -354,6 +398,14 @@ static long device_ioctl(struct file *filp,
 	case FPSGO_VSYNC:
 		if (fpsgo_notify_vsync_fp)
 			fpsgo_notify_vsync_fp();
+#ifdef CONFIG_OAKS
+		/*
+		 * OSK: feed the vsync tick to OAKS for frame-deadline-miss
+		 * detection. fps=0 keeps the last known refresh rate
+		 * (default 60 from oaks_init).
+		 */
+		oaks_notify_vsync(0);
+#endif
 		break;
 	case FPSGO_GET_FPS:
 		if (fpsgo_get_fps_fp) {

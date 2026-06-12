@@ -85,7 +85,8 @@ struct oaks_perf_task {
 
 /*
  * Context detection state — updated atomically by oaks_tick().
- * Packed to fit in one or two cache lines.
+ * Reads are lock-free (WRITE_ONCE/READ_ONCE); no ordering guarantees
+ * needed since these are approximate signals for ctx scoring.
  */
 struct oaks_ctx_signals {
 	/* Touch: jiffies of last EV_KEY/EV_ABS event */
@@ -98,9 +99,28 @@ struct oaks_ctx_signals {
 	unsigned int	big_cluster_util;
 	/* nr_running on big cluster at last tick */
 	unsigned int	big_nr_running;
+	/*
+	 * Frame-completion tracking for vsync-deadline-miss detection:
+	 *   last_frame_end_j: jiffies of the most recent completed frame
+	 *                      (set by oaks_notify_frame_end() on
+	 *                      FPSGO_QUEUE producer-end / eglSwapBuffers).
+	 *   last_vsync_j:      jiffies of the previous vsync we processed.
+	 * oaks_notify_vsync() compares these: if no frame completed since
+	 * the previous vsync while a perf scene is active, frame_miss_count
+	 * is incremented (deadline miss); otherwise decremented.
+	 */
+	unsigned long	last_frame_end_j;
+	unsigned long	last_vsync_j;
+	/*
+	 * Frame miss counter, saturating in [0, OAKS_FRAME_MISS_MAX].
+	 * Used as a strong signal for ctx upgrades in oaks_detect_ctx().
+	 */
+	atomic_t	frame_miss_count;
+	/* Current vsync FPS (60/90/120), best-effort, default 60 */
+	unsigned int	vsync_fps;
 };
 
-
+#define OAKS_FRAME_MISS_MAX	8
 
 struct oaks_state {
 	atomic_t			ctx;
@@ -137,6 +157,30 @@ enum oaks_ctx oaks_get_ctx(void);
 void oaks_notify_touch(void);
 void oaks_notify_perf_scene(pid_t main_pid, pid_t render_pid, bool enter);
 void oaks_tick(void);
+
+/*
+ * oaks_notify_frame_end - mark that the render thread finished producing
+ * a frame (FPSGO_QUEUE producer-end, i.e. eglSwapBuffers/vkQueuePresent).
+ * Safe to call from any context (WRITE_ONCE only).
+ */
+void oaks_notify_frame_end(void);
+
+/*
+ * oaks_notify_vsync - called on each vsync event from the FPSGO path.
+ * @fps: current display refresh rate (60/90/120), or 0 to keep the
+ *       last known value (default 60 if never set).
+ *
+ * Compares the timestamp of the last completed frame
+ * (oaks_notify_frame_end) against the previous vsync timestamp:
+ *   - if a frame completed since the last vsync AND a perf scene is
+ *     active: frame_miss_count decremented (on time)
+ *   - if no frame completed AND a perf scene is active: frame_miss_count
+ *     incremented (missed deadline)
+ *   - if no perf scene is active: frame_miss_count decays only
+ *
+ * Safe to call from any context (only WRITE_ONCE + atomic ops + jiffies).
+ */
+void oaks_notify_vsync(unsigned int fps);
 
 /*
  * oaks_classify_thread - apply thread-class uclamp_min based on comm name.
