@@ -1523,16 +1523,21 @@ error:
 static int xgf_enter_est_runtime(int rpid, struct xgf_render *render,
 	unsigned long long *runtime, unsigned long long ts)
 {
-	int ret;
+	/*
+	 * OSK: xgf_est_runtime_fp is a function pointer registered by a
+	 * companion module. When NULL (unregistered or not yet loaded)
+	 * every XGF_QUEUE_END event would trigger WARN_ON, causing a
+	 * storm of warnings in fpsgo_notifier_wq that leads to soft lockup
+	 * on HyperOS. Use WARN_ON_ONCE to fire at most once and return
+	 * gracefully so the workqueue can drain normally.
+	 */
+	if (unlikely(!xgf_est_runtime_fp)) {
+		WARN_ON_ONCE(!xgf_est_runtime_fp);
+		*runtime = 0;
+		return XGF_DISABLE;
+	}
 
-	WARN_ON(!xgf_est_runtime_fp);
-
-	if (xgf_est_runtime_fp)
-		ret = xgf_est_runtime_fp(rpid, render, runtime, ts);
-	else
-		ret = -ENOENT;
-
-	return ret;
+	return xgf_est_runtime_fp(rpid, render, runtime, ts);
 }
 
 static int xgf_get_spid(struct xgf_render *render)

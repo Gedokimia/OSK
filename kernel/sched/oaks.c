@@ -3,11 +3,18 @@
  * OAKS - Optimized Adaptive Kernel Scheduler
  * OSK-16.2-ksun, Redmi 12C / Poco C55 (MediaTek G85)
  *
- * Improvements over v1:
- *  - Multi-signal context detection (touch, PSI, big-cluster util, render wakes)
- *  - Hysteresis to prevent rapid ctx oscillation
- *  - BORE parameter push per context
- *  - Deferred ctx transitions via workqueue (safe from hardirq)
+ * Features:
+ *  - Multi-signal context detection: touch, big-cluster PELT util,
+ *    PSI memory pressure, frame-deadline misses (vsync), active perf scene
+ *  - Per-ctx hysteresis table prevents rapid BALANCED<->RESPONSIVE oscillation
+ *  - BORE burst-penalty-scale push per context
+ *  - Deferred ctx transitions via workqueue (static_key flips need a
+ *    sleeping mutex, so hardirq/touch-irq contexts only set an atomic
+ *    and schedule_work; the actual flip runs in process context)
+ *  - SF/AudioFlinger/HWC thread classification via uclamp_min floors,
+ *    applied at __set_task_comm() time (oaks_classify_thread)
+ *  - Render-thread uclamp_min applied/cleared on perf-scene enter/exit
+ *  - Vsync-driven frame-miss tracking feeds back into ctx scoring
  *  - Sysfs: context, responsive_timeout_ms, stats
  */
 
@@ -125,6 +132,26 @@ static void oaks_apply_params(enum oaks_ctx ctx)
 	if (p->bore_burst_penalty_scale)
 		WRITE_ONCE(sched_burst_penalty_scale, p->bore_burst_penalty_scale);
 #endif
+
+	/*
+	 * Re-apply the render thread's uclamp floor whenever ctx changes.
+	 * uclamp is per-task and is NOT touched by sysctl_sched_* writes,
+	 * so a PERF→RESPONSIVE transition (game still running, e.g. user
+	 * stopped touching but render thread still active) must not lose
+	 * the render thread's floor. Conversely, leaving PERF entirely
+	 * (perf.render_pid cleared by oaks_notify_perf_scene) means this
+	 * loop has nothing to do — render_pid is already 0.
+	 *
+	 * We only re-assert in PERF; RESPONSIVE/BALANCED/BATTERY do not
+	 * touch the render thread's uclamp (it keeps whatever was set on
+	 * scene entry until oaks_notify_perf_scene(..., false) resets it).
+	 */
+	if (ctx == OAKS_CTX_PERF) {
+		pid_t render_pid = READ_ONCE(oaks.perf.render_pid);
+
+		if (render_pid > 0)
+			set_task_util_min(render_pid, OAKS_UCLAMP_SF_RENDER);
+	}
 }
 
 /*
@@ -223,22 +250,124 @@ void oaks_notify_touch(void)
 }
 EXPORT_SYMBOL(oaks_notify_touch);
 
+/*
+ * oaks_notify_frame_end — render thread finished producing a frame.
+ * Called from FPSGO_QUEUE producer-end (eglSwapBuffers/vkQueuePresent).
+ * Safe from any context: WRITE_ONCE only.
+ */
+void oaks_notify_frame_end(void)
+{
+	WRITE_ONCE(oaks.sig.last_frame_end_j, jiffies);
+}
+EXPORT_SYMBOL(oaks_notify_frame_end);
+
+/*
+ * oaks_notify_vsync — called from the FPSGO vsync path on every vsync.
+ *
+ * Deadline-miss detection: a frame "makes" this vsync if
+ * oaks_notify_frame_end() was called at any point after the *previous*
+ * vsync. If a perf scene is active (render_pid != 0) and no frame
+ * completed in that window, the render thread missed its deadline —
+ * increment frame_miss_count. Otherwise decrement (saturating at 0).
+ *
+ * frame_miss_count is read by oaks_detect_ctx() as a strong PERF-upgrade
+ * signal — repeated misses mean current ctx's CFS/BORE params are too
+ * loose for the workload, independent of touch/util signals which lag
+ * actual demand by tens of ms (PELT decay).
+ *
+ * When no perf scene is active, frame_miss_count only decays — vsync
+ * events with no game running must not accumulate false misses.
+ *
+ * Safe from any context: WRITE_ONCE/READ_ONCE + atomic ops + jiffies
+ * comparisons only, no locks.
+ */
+void oaks_notify_vsync(unsigned int fps)
+{
+	unsigned long now = jiffies;
+	unsigned long prev_vsync, frame_end;
+	bool scene_active = READ_ONCE(oaks.perf.render_pid) != 0;
+
+	if (fps != 0)
+		WRITE_ONCE(oaks.sig.vsync_fps, fps);
+
+	prev_vsync = READ_ONCE(oaks.sig.last_vsync_j);
+	frame_end  = READ_ONCE(oaks.sig.last_frame_end_j);
+	WRITE_ONCE(oaks.sig.last_vsync_j, now);
+
+	if (!scene_active) {
+		atomic_dec_if_positive(&oaks.sig.frame_miss_count);
+		return;
+	}
+
+	if (time_after(frame_end, prev_vsync)) {
+		/* A frame completed since the previous vsync — on time */
+		atomic_dec_if_positive(&oaks.sig.frame_miss_count);
+	} else {
+		/* No frame completed — missed this vsync's deadline */
+		if (atomic_read(&oaks.sig.frame_miss_count) < OAKS_FRAME_MISS_MAX)
+			atomic_inc(&oaks.sig.frame_miss_count);
+	}
+}
+EXPORT_SYMBOL(oaks_notify_vsync);
+
+/*
+ * oaks_notify_perf_scene — register/clear the active game's main+render
+ * thread PIDs. Called from perf_ioctl FPSGO_QUEUE_CONNECT / FPSGO_QUEUE.
+ *
+ * On enter:
+ *   - Record main_pid (tgid) / render_pid (tid).
+ *   - Apply uclamp_min=OAKS_UCLAMP_SF_RENDER to the render thread so EAS
+ *     places it on the A75 cluster at ≥50% capacity immediately, without
+ *     waiting for oaks_tick() to detect load and transition ctx.
+ *   - Force ctx=PERF.
+ *
+ * On exit:
+ *   - Reset the previously-boosted render thread's uclamp_min to 0
+ *     (OAKS_UCLAMP_RESET) so it doesn't retain an A75 floor after the
+ *     game exits — this would otherwise waste power on a backgrounded
+ *     render thread.
+ *   - Clear perf.{main,render}_pid.
+ *   - Drop to RESPONSIVE; oaks_tick() decays to BALANCED after timeout.
+ *
+ * Safe to call from process context only (set_task_util_min sleeps via
+ * sched_setattr_nocheck → rt_mutex). perf_ioctl handlers run in process
+ * context (ioctl syscall), so this is fine.
+ */
 void oaks_notify_perf_scene(pid_t main_pid, pid_t render_pid, bool enter)
 {
 	unsigned long flags;
+	pid_t old_render_pid;
 
 	spin_lock_irqsave(&oaks.lock, flags);
+	old_render_pid = oaks.perf.render_pid;
+
 	if (enter) {
 		oaks.perf.main_pid   = main_pid;
 		oaks.perf.render_pid = render_pid;
 		WRITE_ONCE(oaks.sig.last_render_wake_j, jiffies);
 		spin_unlock_irqrestore(&oaks.lock, flags);
+
+		/*
+		 * If the render thread changed (new game, or thread churn
+		 * within the same game), clear the old thread's floor first
+		 * so it doesn't stay pinned to A75 after losing the role.
+		 */
+		if (old_render_pid > 0 && old_render_pid != render_pid)
+			set_task_util_min(old_render_pid, OAKS_UCLAMP_RESET);
+
+		if (render_pid > 0)
+			set_task_util_min(render_pid, OAKS_UCLAMP_SF_RENDER);
+
 		oaks_set_ctx(OAKS_CTX_PERF);
 	} else {
 		oaks.perf.main_pid   = 0;
 		oaks.perf.render_pid = 0;
 		spin_unlock_irqrestore(&oaks.lock, flags);
-		/* Transition to RESPONSIVE briefly, tick will decay to BALANCED */
+
+		if (old_render_pid > 0)
+			set_task_util_min(old_render_pid, OAKS_UCLAMP_RESET);
+
+		/* Transition to RESPONSIVE briefly; tick decays to BALANCED */
 		oaks_set_ctx(OAKS_CTX_RESPONSIVE);
 	}
 }
@@ -344,6 +473,7 @@ static enum oaks_ctx oaks_detect_ctx(void)
 	unsigned long touch_age;
 	unsigned int big_util, big_nr;
 	unsigned long psi_avg;
+	int frame_miss;
 	enum oaks_ctx cur;
 	int score = 0;
 
@@ -355,6 +485,7 @@ static enum oaks_ctx oaks_detect_ctx(void)
 	big_util   = READ_ONCE(oaks.sig.big_cluster_util);
 	big_nr     = READ_ONCE(oaks.sig.big_nr_running);
 	psi_avg    = READ_ONCE(oaks.sig.psi_mem_some_avg);
+	frame_miss = atomic_read(&oaks.sig.frame_miss_count);
 	cur        = (enum oaks_ctx)atomic_read(&oaks.ctx);
 
 	/* Touch recency */
@@ -374,6 +505,19 @@ static enum oaks_ctx oaks_detect_ctx(void)
 		score += 2;
 	if (big_nr >= 2)
 		score += 1;
+
+	/*
+	 * Frame miss — strong upgrade signal independent of CPU util.
+	 * A render thread can miss vsync deadlines due to GPU-bound work,
+	 * binder IPC latency, or scheduling latency that PELT util doesn't
+	 * capture yet (util_avg lags actual demand by tens of ms).
+	 * 1-2 misses: transient, +2. 3+ misses: sustained jank, +4 — this
+	 * alone can push BALANCED straight to RESPONSIVE/PERF.
+	 */
+	if (frame_miss >= 3)
+		score += 4;
+	else if (frame_miss >= 1)
+		score += 2;
 
 	/* Memory pressure — penalise harder than before */
 	if (psi_avg >= OAKS_PSI_MEM_SOME_THRESH)
@@ -534,6 +678,10 @@ void oaks_init(void)
 	spin_lock_init(&oaks.lock);
 	atomic_set(&oaks.ctx, OAKS_CTX_BALANCED);
 	atomic_set(&oaks.pending_ctx, OAKS_CTX_BALANCED);
+	atomic_set(&oaks.sig.frame_miss_count, 0);
+	WRITE_ONCE(oaks.sig.vsync_fps, 60);
+	WRITE_ONCE(oaks.sig.last_frame_end_j, jiffies);
+	WRITE_ONCE(oaks.sig.last_vsync_j, jiffies);
 
 	/* Deferred ctx transition work — safe to call from any context */
 	INIT_WORK(&oaks.ctx_work, oaks_ctx_work_fn);
@@ -611,16 +759,22 @@ static ssize_t stats_show(struct kobject *kobj,
 			 "battery=%lu balanced=%lu responsive=%lu perf=%lu\n"
 			 "perf_main_pid=%d perf_render_pid=%d\n"
 			 "big_cluster_util=%u%% big_nr_running=%u\n"
-			 "psi_mem_some_avg=%lu\n",
+			 "psi_mem_some_avg=%lu\n"
+			 "vsync_fps=%u frame_miss_count=%d\n"
+			 "render_wake_age_ms=%u\n",
 			 oaks.ctx_switches[OAKS_CTX_BATTERY],
 			 oaks.ctx_switches[OAKS_CTX_BALANCED],
 			 oaks.ctx_switches[OAKS_CTX_RESPONSIVE],
 			 oaks.ctx_switches[OAKS_CTX_PERF],
-			 oaks.perf.main_pid,
-			 oaks.perf.render_pid,
+			 READ_ONCE(oaks.perf.main_pid),
+			 READ_ONCE(oaks.perf.render_pid),
 			 READ_ONCE(oaks.sig.big_cluster_util),
 			 READ_ONCE(oaks.sig.big_nr_running),
-			 READ_ONCE(oaks.sig.psi_mem_some_avg));
+			 READ_ONCE(oaks.sig.psi_mem_some_avg),
+			 READ_ONCE(oaks.sig.vsync_fps),
+			 atomic_read(&oaks.sig.frame_miss_count),
+			 jiffies_to_msecs(jiffies -
+					  READ_ONCE(oaks.sig.last_render_wake_j)));
 }
 static struct kobj_attribute oaks_stats_attr =
 	__ATTR(stats, 0444, stats_show, NULL);

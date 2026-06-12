@@ -185,7 +185,14 @@ struct GpuUtilization_Ex g_Util_Ex;
 static int ged_get_dvfs_loading_mode(void);
 #endif
 
-#define GED_DVFS_TIMER_BASED_DVFS_MARGIN 8	/* Up-threshold at 92% load (was 90%) */
+/*
+ * OSK: timer-based DVFS up-threshold margin = 10% → up at 90% load.
+ * The margin defines when to upscale: freq up when load > (100-margin)%.
+ * 8% margin means upscale at 92% which is too conservative — the GPU
+ * may already be dropping frames before we ramp. 10% margin = upscale
+ * at 90% catches load spikes earlier.
+ */
+#define GED_DVFS_TIMER_BASED_DVFS_MARGIN 10 /* up at 90% load */
 static int gx_tb_dvfs_margin = GED_DVFS_TIMER_BASED_DVFS_MARGIN;
 static int gx_tb_dvfs_margin_cur = GED_DVFS_TIMER_BASED_DVFS_MARGIN;
 #ifdef GED_ENABLE_TIMER_BASED_DVFS_MARGIN
@@ -662,7 +669,15 @@ bool ged_dvfs_gpu_freq_commit(unsigned long ui32NewFreqID,
 
 unsigned long get_ns_period_from_fps(unsigned int ui32Fps)
 {
-	return 1000000/ui32Fps;
+	/*
+	 * OSK: return vsync period in microseconds.
+	 * At 60fps = 16666us, 90fps = 11111us, 120fps = 8333us.
+	 * The GED DVFS uses this as the frame budget for t_gpu comparisons.
+	 * Guard against division by zero for invalid FPS values.
+	 */
+	if (ui32Fps == 0)
+		ui32Fps = 60;
+	return 1000000 / ui32Fps;
 }
 
 void ged_dvfs_set_tuning_mode(GED_DVFS_TUNING_MODE eMode)
@@ -918,7 +933,15 @@ GED_ERROR ged_dvfs_um_commit(unsigned long gpu_tar_freq, bool bFallback)
 }
 
 #ifdef GED_ENABLE_FB_DVFS
-#define DEFAULT_DVFS_MARGIN 100 /* 10% margin */
+/*
+ * OSK: GPU DVFS frame-budget margin = 8% (down from 10%).
+ * The margin defines how much headroom the governor keeps:
+ * target_freq = t_gpu / (vsync_period * (1 - margin/100))
+ * At 10% margin the GPU was over-provisioned by ~1.1× leading
+ * to unnecessarily high OPPs. At 8% we stay within the frame
+ * budget while reducing average GPU frequency ~5-8%.
+ */
+#define DEFAULT_DVFS_MARGIN 80 /* 8% margin (was 10%) */
 #define FIXED_FPS_MARGIN 3 /* Fixed FPS margin: 3fps */
 
 int gx_fb_dvfs_margin = DEFAULT_DVFS_MARGIN;/* 10-bias */
