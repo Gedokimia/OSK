@@ -96,6 +96,9 @@ unsigned int normalized_sysctl_sched_wakeup_granularity	= 4000000UL;
 
 const_debug unsigned int sysctl_sched_migration_cost	= 500000UL;
 
+/* OAKS: PELT decay half-life tunable, exposed via sysctl */
+unsigned int sysctl_sched_pelt_halflife = 16; /* ms, default upstream value */
+
 /*
  * Remove and clamp on negative, from a local variable.
  *
@@ -142,6 +145,7 @@ static inline u64 scale_slice(u64 delta, struct sched_entity *se)
 	return mul_u64_u32_shr(delta, sched_prio_to_wmult[se->burst_score], 22);
 }
 
+static inline struct task_struct *task_of(struct sched_entity *se);
 static void update_burst_score(struct sched_entity *se)
 {
 	struct task_struct *p;
@@ -210,12 +214,6 @@ int __weak arch_asym_cpu_priority(int cpu)
 unsigned int sysctl_sched_cfs_bandwidth_slice		= 10000UL; /* KernelBumi: 10ms slice, less refill overhead */
 #endif
 
-/*
- * The margin used when comparing utilization with CPU capacity:
- * util * margin < capacity * 1024
- *
- * (default: ~20%)
- */
 unsigned int capacity_margin				= 1344; /* KernelBumi 4GB: 31% headroom */
 const unsigned int sched_capacity_margin_min		= 1024;
 const unsigned int sched_capacity_margin_max		= 1920;
