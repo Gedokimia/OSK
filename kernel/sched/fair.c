@@ -213,8 +213,7 @@ int __weak arch_asym_cpu_priority(int cpu)
  */
 unsigned int sysctl_sched_cfs_bandwidth_slice		= 10000UL; /* KernelBumi: 10ms slice, less refill overhead */
 #endif
-
-unsigned int capacity_margin				= 1344; /* KernelBumi 4GB: 31% headroom */
+unsigned int capacity_margin				= 1280; /* KernelBumi 4GB: 25% headroom */
 const unsigned int sched_capacity_margin_min		= 1024;
 const unsigned int sched_capacity_margin_max		= 1920;
 EXPORT_SYMBOL_GPL(capacity_margin);
