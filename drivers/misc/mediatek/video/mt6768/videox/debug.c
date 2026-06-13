@@ -76,8 +76,31 @@ unsigned int g_mobilelog;
 int bypass_blank;
 int lcm_mode_status;
 int layer_layout_allow_non_continuous;
-/* Boundary of enter screen idle */
-unsigned long long idle_check_interval = 50;
+/*
+ * OSK: boundary of enter screen idle, in ms.
+ *
+ * When the display has not received a new frame for this long, the
+ * display pipeline enters a low-power idle state via
+ * primary_display_idlemgr_kick() / get_to_idle_thread(). Coming back
+ * out (primary_display_idlemgr_leave_idle_nolock() -> _vdo_mode_leave_idle()
+ * or _cmd_mode_leave_idle(), triggered by the next touch/frame) restores
+ * the golden DVFS/MM-QOS settings, DSI vfp timing, and (for command-mode
+ * panels) the direct-link path before the frame can be presented — this
+ * re-entry work is a measurable component of touch-to-display latency.
+ *
+ * 50ms (the upstream default) means a brief pause between taps
+ * (e.g. reading a notification, then tapping) is enough to drop into
+ * the idle path, so the NEXT tap pays the leave-idle re-entry cost on
+ * top of the normal touch->vsync->compose->present pipeline.
+ *
+ * 100ms keeps the pipeline in its active state through brief pauses
+ * that are common during normal interaction (reading text, deciding
+ * where to tap next), while still entering the power-saving idle path
+ * during genuinely idle periods (screen left on with no input). The
+ * power cost of an extra 50ms in the active state per idle transition
+ * is negligible compared to the latency improvement on the next touch.
+ */
+unsigned long long idle_check_interval = 100;
 /* modify rdma threshold for debug */
 int dbg_ultlow, dbg_ulthigh, dbg_prehigh, dbg_urg_low, dbg_urg_high;
 

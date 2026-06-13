@@ -679,8 +679,32 @@
 #define CPU_DVFS_FREQ14_LL_G75		774000		/* KHz */
 #define CPU_DVFS_FREQ15_LL_G75		500000		/* KHz */
 
+/*
+ * OSK: relaxed Freq — G75 big-cluster (A75, "OPP table B") OPP0.
+ *
+ * The original FREQ0/FREQ1 gap is 2203-2087=116MHz, the largest step
+ * in this 16-entry table (every other adjacent pair differs by
+ * 60-100MHz, see FREQ1..FREQ15 below). FREQ0=2203MHz is an outlier
+ * "turbo" step that sits well above the smooth progression of the
+ * rest of the table and is the first OPP ATM (clatm_initcfg.h) and
+ * the cpu03/cpu00 thermal coolers (tzcpu_initcfg.h) will throttle
+ * away from under any sustained load.
+ *
+ * Relaxed to 2180MHz: FREQ1+93MHz, matching the FREQ1->FREQ2 step
+ * size (2087-1995=92MHz) instead of the outlier 116MHz jump. VOLT0
+ * (CPU_DVFS_VOLT0_VPROC2_G75, unchanged) was already validated to
+ * supply 2203MHz, so it is more than sufficient for 2180MHz — this
+ * is a frequency-only reduction at the same (already-proven) voltage,
+ * not a new operating point requiring revalidation.
+ *
+ * Effect: the top OPP is now a step the CPU can actually sustain
+ * under the relaxed thermal limits above, rather than an extreme
+ * burst value that is immediately throttled back down — smoother
+ * DVFS behaviour under sustained load (games), slightly lower peak
+ * power draw at the very top of the range.
+ */
 /* for DVFS OPP table B */
-#define CPU_DVFS_FREQ0_L_G75		2203000		/* KHz */
+#define CPU_DVFS_FREQ0_L_G75		2180000		/* KHz, OSK: was 2203000 */
 #define CPU_DVFS_FREQ1_L_G75		2087000		/* KHz */
 #define CPU_DVFS_FREQ2_L_G75		1995000		/* KHz */
 #define CPU_DVFS_FREQ3_L_G75		1903000		/* KHz */
@@ -697,8 +721,29 @@
 #define CPU_DVFS_FREQ14_L_G75	    840000		/* KHz */
 #define CPU_DVFS_FREQ15_L_G75		725000		/* KHz */
 
+/*
+ * OSK: relaxed Freq — G75 CCI (cache-coherent interconnect) OPP0.
+ *
+ * The original FREQ0/FREQ1 gap is 1277-1120=157MHz — by far the
+ * largest step in this table (every other adjacent pair differs by
+ * 30-65MHz). The CCI clock drives the shared L3/DSU fabric used by
+ * BOTH clusters; an outlier 157MHz top step means the interconnect
+ * jumps to its most power-hungry state for any cross-cluster memory
+ * traffic burst, then immediately steps back down 157MHz once ATM or
+ * the thermal coolers react — visible as periodic memory-latency
+ * jitter under sustained load.
+ *
+ * Relaxed to 1190MHz: FREQ1+70MHz, matching the FREQ1->FREQ2 step
+ * size (1120-1049=71MHz) instead of the outlier 157MHz jump. VOLT0
+ * (CPU_DVFS_VOLT0_VPROC3_G75, unchanged) was already validated to
+ * supply 1277MHz, so it remains more than sufficient for 1190MHz.
+ *
+ * 1190MHz is still above the base 6768 bin's CCI ceiling (1187MHz),
+ * so G75-bin silicon retains its interconnect advantage — just
+ * without the extreme single-step jump at the very top.
+ */
 /* for DVFS OPP table CCI */
-#define CPU_DVFS_FREQ0_CCI_G75		1277000		/* KHz */
+#define CPU_DVFS_FREQ0_CCI_G75		1190000		/* KHz, OSK: was 1277000 */
 #define CPU_DVFS_FREQ1_CCI_G75		1120000		/* KHz */
 #define CPU_DVFS_FREQ2_CCI_G75		1049000		/* KHz */
 #define CPU_DVFS_FREQ3_CCI_G75		1014000		/* KHz */

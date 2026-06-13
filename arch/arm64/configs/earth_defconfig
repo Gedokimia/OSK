@@ -60,6 +60,28 @@ CONFIG_DEFAULT_KYBER=y
 # CONFIG_MEMCG_KMEM is not set
 # CONFIG_MTK_MM_DEBUG is not set
 # CONFIG_MMSTAT_TRACER is not set
+#
+# OSK: disable MTK AEE (Android Exception Engine) entirely.
+# AEE provides crash-dump/hang-detection infrastructure
+# (drivers/misc/mediatek/aee/*) consisting of:
+#  - aed: kernel exception report daemon + ioctl interface
+#  - mrdump: full/mini memory dump on panic (large DRAM reservation
+#    + dump-to-storage on every kernel panic)
+#  - hangdet: per-CPU heartbeat hang detector — a periodic kthread
+#    that pings every CPU and raises an exception if one doesn't
+#    respond in time. This is the main always-on background loop.
+# MTK_AEE_FEATURE also selects FTRACE + TRACER_SNAPSHOT, pulling in
+# the function tracer infrastructure even when nothing is tracing.
+# None of this is needed outside MTK's internal bug-report pipeline;
+# disabling removes the hangdet kthread, the snapshot tracer, and the
+# mrdump panic-dump path (Android bootloader/ramoops still captures
+# kernel logs via pstore on panic).
+#
+# CONFIG_MTK_AEE_FEATURE is not set
+# CONFIG_MTK_AEE_AED is not set
+# CONFIG_MTK_AEE_IPANIC is not set
+# CONFIG_MTK_AEE_UT is not set
+# CONFIG_MTK_AEE_HANGDET is not set
 CONFIG_VIRT_CPU_ACCOUNTING_GEN=n
 CONFIG_RT_GROUP_SCHED=y
 # CONFIG_WQ_WATCHDOG is not set
