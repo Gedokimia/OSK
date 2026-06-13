@@ -362,16 +362,31 @@ config MTK_ANDROID_DEFAULT_SETTING
 	select LLC
 	select LOG_TOO_MUCH_WARNING if (MTK_ENG_BUILD && MTK_AEE_FEATURE)
 	select MEDIATEK_CACHE_API
-	select MTK_AEE_AED
-	select MTK_AEE_FEATURE
-	select MTK_AEE_IPANIC
+	# OSK: MTK_AEE_AED/FEATURE/IPANIC removed from this unconditional
+	# select list. `select` is a hard reverse-dependency that Kconfig
+	# enforces regardless of "# CONFIG_MTK_AEE_* is not set" in any
+	# defconfig — as long as MTK_ANDROID_DEFAULT_SETTING=y selected
+	# them here, earth_defconfig's explicit disable of AEE was
+	# silently overridden back to y. Removing the selects here is
+	# what actually lets earth_defconfig's AEE disable take effect.
+	# LOG_TOO_MUCH_WARNING and MTK_HANG_DETECT_DB below are already
+	# conditional "if ... && MTK_AEE_FEATURE" and become inert once
+	# MTK_AEE_FEATURE is off.
 	select MTK_AMMS
 	select MTK_ATF_LOGGER
 	select MTK_CAMERA_ISP
 	select MTK_DRAMC if (!MACH_MT6877) && (!MACH_MT6833) && (!MACH_MT6885) && (!MACH_MT6873) && (!MACH_MT6853) && (!MACH_MT6893)
 	select MTK_EMI if (!MACH_MT6739 ) && (!MACH_MT6877) && (!MACH_MT6833) && (!MACH_MT6781) && (!MACH_MT6885) && (!MACH_MT6873) && (!MACH_MT6853) && (!MACH_MT6893)
 	select MTK_FB_SUPPORT_ASSERTION_LAYER if MTK_FB
-	select MTK_HANG_DETECT
+	# OSK: MTK_HANG_DETECT removed — separate per-CPU hang monitor
+	# (drivers/misc/mediatek/monitor_hang/), unconditionally selected
+	# here independent of MTK_AEE_HANGDET. Same class of always-on
+	# background debugging loop as AEE; removing the select lets
+	# earth_defconfig leave it unset (no entry needed there since it
+	# was never explicitly enabled in earth_defconfig — only forced
+	# on via this select).
+	# MTK_HANG_DETECT_DB below already depends on MTK_HANG_DETECT, so
+	# it becomes inert once MTK_HANG_DETECT is off.
 	select MTK_HANG_DETECT_DB if (MTK_HANG_DETECT && MTK_AEE_FEATURE)
 	select MTK_MM_DEBUG if(!MTK_GMO_RAM_OPTIMIZE)
 	select MTK_MMC_DEBUG if (MMC_MTK_PRO || MMC_MTK_SDIO) && (!MTK_GMO_RAM_OPTIMIZE)
