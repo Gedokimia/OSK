@@ -977,12 +977,12 @@ static int dvfs_margin_value = DEFAULT_DVFS_MARGIN/10;
 unsigned int dvfs_margin_mode = CONFIGURE_MARGIN_MODE;
 
 static int dvfs_min_margin_inc_step = MIN_MARGIN_INC_STEP;
-static int dvfs_margin_low_bound = 1; /* 1% headroom */
+static int dvfs_margin_low_bound = 5; /* 5% headroom */
 #endif
 
 module_param(gx_fb_dvfs_margin, int, 0644);
-#define GED_DVFS_BUSY_CYCLE_MONITORING_WINDOW_NUM 4
-#define GED_FB_DVFS_FERQ_DROP_RATIO_LIMIT 70
+#define GED_DVFS_BUSY_CYCLE_MONITORING_WINDOW_NUM 3
+#define GED_FB_DVFS_FERQ_DROP_RATIO_LIMIT 75
 static int is_fb_dvfs_triggered;
 static int is_fallback_mode_triggered;
 
