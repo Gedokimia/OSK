@@ -116,7 +116,20 @@ uint __read_mostly sched_burst_smoothness_long  = 1;
 uint __read_mostly sched_burst_smoothness_short = 0;
 uint __read_mostly sched_burst_fork_atavistic   = 2;
 uint __read_mostly sched_burst_penalty_offset   = 22;
-uint __read_mostly sched_burst_penalty_scale    = 1280;
+/*
+ * OSK: sched_burst_penalty_scale 1280 -> 1024.
+ * BORE penalises tasks with high accumulated burst_time (CPU usage
+ * without sleeping). Mobile games are inherently bursty — render
+ * thread does CPU work, submits GPU commands, sleeps until next
+ * vsync, then bursts again. At 1280, game threads accumulate penalty
+ * and lose priority to short-lived background tasks (JIT, dex2oat,
+ * sync workers) during the scheduling decision.
+ * 1024 = 1.0x scale (reduced penalty weight). OAKS pushes this to
+ * 768 in PERF context (active game session). This value applies in
+ * BALANCED context — before OAKS detects the game, and during brief
+ * non-touch windows where OAKS has decayed back to BALANCED.
+ */
+uint __read_mostly sched_burst_penalty_scale    = 1024;
 uint __read_mostly sched_burst_cache_lifetime   = 60000000;
 #define MAX_BURST_PENALTY (39U << 2)
 
