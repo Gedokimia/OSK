@@ -1599,14 +1599,47 @@ static int vidioc_vdec_s_fmt(struct file *file, void *priv,
 	pix_mp = &f->fmt.pix_mp;
 	if ((f->type == V4L2_BUF_TYPE_VIDEO_OUTPUT_MPLANE) &&
 		vb2_is_busy(&ctx->m2m_ctx->out_q_ctx.q)) {
+		/*
+		 * OUTPUT queue (compressed bitstream) is busy — cannot
+		 * change format while buffers are allocated. No valid DRC
+		 * path calls S_FMT on the output queue mid-stream.
+		 */
 		mtk_v4l2_err("out_q_ctx buffers already requested");
-		ret = -EBUSY;
+		return -EBUSY;
 	}
 
 	if ((f->type == V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE) &&
 		vb2_is_busy(&ctx->m2m_ctx->cap_q_ctx.q)) {
+		/*
+		 * OSK: CAPTURE queue busy during Dynamic Resolution Change
+		 * (DRC). Root cause of YouTube quality cap at 360p:
+		 *
+		 * When the bitstream switches resolution (e.g. YouTube
+		 * quality change 1080p→360p), the driver fires a
+		 * V4L2_EVENT_SOURCE_CHANGE event. The Android MediaCodec
+		 * framework then calls VIDIOC_S_FMT with new dimensions.
+		 * But the capture queue still has old-resolution buffers
+		 * (vb2_is_busy=true), so we return -EBUSY.
+		 *
+		 * BUG (was): the old code set ret=-EBUSY but did NOT
+		 * return. Execution fell through to mtk_vdec_find_format()
+		 * and q_data format updates, corrupting the decoder
+		 * context while buffers were live (wrong sizeimage,
+		 * coded_width/height for the new resolution). This caused
+		 * broken output frames that the framework detected as
+		 * decoder failure, falling back to SW decode at 360p.
+		 *
+		 * FIX: return -EBUSY immediately. The V4L2 stateful decoder
+		 * spec requires the app to do:
+		 *   SOURCE_CHANGE event
+		 *   → STREAMOFF capture queue  (frees buffers → not busy)
+		 *   → S_FMT with new dimensions (now succeeds)
+		 *   → REQBUFS + STREAMON
+		 * Android MediaCodec (10+/Codec2) follows this sequence
+		 * correctly when the driver returns -EBUSY cleanly.
+		 */
 		mtk_v4l2_err("cap_q_ctx buffers already requested");
-		ret = -EBUSY;
+		return -EBUSY;
 	}
 
 	fmt = mtk_vdec_find_format(ctx, f,
@@ -2641,7 +2674,12 @@ static int mtk_vdec_g_v_ctrl(struct v4l2_ctrl *ctrl)
 		if (ctx->state >= MTK_STATE_HEADER)
 			ctrl->val = ctx->dpb_size;
 		else {
-			mtk_v4l2_debug(0, "Seqinfo not ready");
+			/*
+			 * Normal: framework polls before SPS/PPS arrives.
+			 * Log at level 4 (verbose) to avoid dmesg flood at
+			 * video session start (~60 polls before first SPS).
+			 */
+			mtk_v4l2_debug(4, "Seqinfo not ready");
 			ctrl->val = 0;
 		}
 		break;
