@@ -1119,7 +1119,17 @@ static int sugov_init(struct cpufreq_policy *policy)
 	 * Fallback (unknown topology): 500us/5ms — safe conservative values.
 	 */
 	if (cpumask_first(policy->cpus) >= OAKS_BIG_FIRST) {
-		tunables->up_rate_limit_us   = 200;
+		/*
+		 * OSK: A75 up_rate_limit 200->100µs.
+		 * Game render threads burst for 2-6ms per frame. At 200µs
+		 * the frequency ramp can lag by up to 200µs when burst
+		 * starts, costing frametime. 100µs still prevents single-
+		 * wakeup noise from escalating OPP unnecessarily, while
+		 * halving the ramp lag on genuine sustained game bursts.
+		 * Down-rate 2ms unchanged: hold A75 at peak for 2ms after
+		 * burst ends to absorb back-to-back render submissions.
+		 */
+		tunables->up_rate_limit_us   = 100;
 		tunables->down_rate_limit_us = 2000;
 	} else {
 		tunables->up_rate_limit_us   = 500;

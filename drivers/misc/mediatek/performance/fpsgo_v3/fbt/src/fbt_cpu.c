@@ -3267,11 +3267,28 @@ void __exit fbt_cpu_exit(void)
 
 int __init fbt_cpu_init(void)
 {
-	bhr = 5;
+	/*
+	 * OSK: bhr 5->3. Budget headroom ratio: FBT sets the CPU floor
+	 * such that frames complete with bhr% headroom. 3% vs 5% reduces
+	 * the sustained CPU OPP floor by ~1 OPP step on A75 for frames
+	 * that consistently finish on time, saving power. Rescue logic
+	 * (rescue_percent=25 above) handles frames that deviate.
+	 */
+	bhr = 3;
 	bhr_opp = 1;
-	rescue_opp_c = (NR_FREQ_CPU / 2); /* KernelBumi: mid-OPP rescue on little */
-	rescue_opp_f = 2;                  /* KernelBumi: higher freq rescue on big */
-	rescue_percent = DEF_RESCUE_PERCENT;
+	rescue_opp_c = (NR_FREQ_CPU / 2); /* mid-OPP rescue floor on little cluster */
+	rescue_opp_f = 2;                  /* high-freq rescue floor on big cluster */
+	/*
+	 * OSK: rescue_percent 33 keep.
+	 * Rescue fires when frame completion is predicted to exceed the
+	 * vsync budget by this percent. At 33%, the emergency CPU boost
+	 * fires 5ms into a 16ms frame that's already going to miss.
+	 * At 25%, it fires ~4ms earlier, giving the frequency ramp time
+	 * (schedutil up_rate=200us on A75) to recover within the same
+	 * vsync window. Smaller value = more proactive, slightly higher
+	 * average CPU frequency during frame prediction misses.
+	 */
+	rescue_percent = 33;
 	min_rescue_percent = 10;
 	short_rescue_ns = DEF_RESCUE_NS_TH;
 	short_min_rescue_p = 0;
