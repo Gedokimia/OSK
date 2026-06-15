@@ -948,15 +948,7 @@ int gx_fb_dvfs_margin = DEFAULT_DVFS_MARGIN;/* 10-bias */
 
 #ifdef GED_ENABLE_DYNAMIC_DVFS_MARGIN
 #define MAX_DVFS_MARGIN 990 /* 99 % margin */
-/*
- * OSK: MIN_DVFS_MARGIN 10->8 (0.8% minimum dynamic margin).
- * The adaptive GPU DVFS margin cannot compress below this floor.
- * Slightly tighter floor lets the GPU exploit its current OPP more
- * fully before escalating — reduces unnecessary freq-ups during
- * stable scenes (menus, loading screens) while the rescue mechanism
- * (dvfs_margin_low_bound=5%) handles rapid load increases.
- */
-#define MIN_DVFS_MARGIN 8 /* 0.8% margin floor */
+#define MIN_DVFS_MARGIN 10 /* 1% margin */
 
 /* dynamic margin mode for FPSGo control fps margin */
 #define DYNAMIC_MARGIN_MODE_CONFIG_FPS_MARGIN 0x10
