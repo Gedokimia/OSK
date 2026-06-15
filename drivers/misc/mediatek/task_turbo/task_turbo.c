@@ -28,7 +28,29 @@ static uint32_t launch_turbo =  SUB_FEAT_LOCK | SUB_FEAT_BINDER |
 				SUB_FEAT_SCHED | SUB_FEAT_FLAVOR_BIGCORE;
 static DEFINE_MUTEX(TURBO_MUTEX_LOCK);
 static pid_t turbo_pid[TURBO_PID_COUNT] = {0};
-static unsigned int task_turbo_feats;
+/*
+ * OSK: task_turbo_feats = 15 (latency_turbo) by default.
+ * Enables all turbo sub-features for top-app cgroup tasks:
+ *   SUB_FEAT_LOCK(1):          mutex/rwsem priority inheritance
+ *   SUB_FEAT_BINDER(2):        binder transaction priority inheritance
+ *   SUB_FEAT_SCHED(4):         scheduler nice promotion via RLIMIT_NICE
+ *   SUB_FEAT_FLAVOR_BIGCORE(8): prefer A75 big cluster
+ *
+ * Scope (from cgroup_check_set_turbo + sys_set_turbo_task):
+ *   - RenderThread (p->render=1) of any top-app cgroup process
+ *   - Group leader of foreground app (parent != init) in top-app
+ *   Bounded to TURBO_PID_COUNT=8 tasks total.
+ *
+ * Effect on gaming (Free Fire, Roblox):
+ *   RenderThread is promoted to its RLIMIT_NICE value (Android sets
+ *   RLIMIT_NICE=40 for top-app, allowing nice down to -20 effectively)
+ *   and placed on A75. Binder calls from the render thread to
+ *   SurfaceFlinger inherit the elevated priority — this is the single
+ *   most impactful scheduling change available for game workloads on
+ *   this SoC. Previously this was OFF by default and required
+ *   userspace activation via /sys/module/task_turbo/parameters/feats.
+ */
+static unsigned int task_turbo_feats = 15; /* OSK: latency_turbo on by default */
 
 inline bool latency_turbo_enable(void)
 {
