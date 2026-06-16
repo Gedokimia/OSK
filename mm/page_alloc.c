@@ -337,7 +337,20 @@ int user_min_free_kbytes = -1;
  * before the allocator starts direct reclaim. On 3GB this is ~384MB,
  * large enough to absorb app-launch allocation spikes without stalling.
  */
-int watermark_scale_factor = 125;
+/*
+ * OSK watermark_scale_factor = 100 (10%).
+ * Reduced from 125 (12.5%). At 125, the WMARK_HIGH is set 12.5% of
+ * managed memory above WMARK_MIN, which on a 3GB device creates a
+ * ~384MB reclaim zone. kswapd wakes when free pages fall below
+ * WMARK_HIGH and runs until WMARK_HIGH is satisfied — keeping that
+ * much RAM perpetually clear is wasteful when games and the GPU
+ * benefit from every page in active use.
+ * At 100 (10%), the zone is ~307MB — still ample headroom to absorb
+ * sudden allocation spikes (SF, game asset load) before direct reclaim
+ * stalls the calling thread, but kswapd is less aggressive in clearing
+ * pages that could be serving the active game workload.
+ */
+int watermark_scale_factor = 100;
 
 /*
  * Extra memory for the system to try freeing. Used to temporarily

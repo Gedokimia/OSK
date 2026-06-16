@@ -6760,12 +6760,16 @@ int kswapd_run(int nid)
 	pgdat->kswapd = kthread_run(kswapd, pgdat, "kswapd%d", nid);
 	if (!IS_ERR(pgdat->kswapd))
 		/*
-		 * OSK: nice=-2 keeps kswapd above SCHED_NORMAL user tasks
-		 * (nice=0) so reclaim proceeds promptly under memory pressure
-		 * without starving SF/audio threads at their default nice=-1.
-		 * Do not go below -5 or kswapd can preempt render threads.
+		 * OSK: kswapd nice=-1.
+		 * Changed from -2: task_turbo now promotes game RenderThread
+		 * to nice ≈ -10 (via RLIMIT_NICE). A kswapd at nice=-2 sits
+		 * ABOVE normal game threads (nice=0) but below turbo threads.
+		 * At nice=-1 kswapd has slightly less priority than before
+		 * but turbo game threads still run well above it. kswapd at
+		 * nice=-1 still responds adequately to memory pressure while
+		 * reducing interference with non-turbo foreground threads.
 		 */
-		set_user_nice(pgdat->kswapd, -2);
+		set_user_nice(pgdat->kswapd, -1);
 	if (IS_ERR(pgdat->kswapd)) {
 		/* failure at boot is fatal */
 		BUG_ON(system_state < SYSTEM_RUNNING);

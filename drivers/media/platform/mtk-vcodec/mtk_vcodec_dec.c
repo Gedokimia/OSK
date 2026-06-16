@@ -510,7 +510,8 @@ int mtk_vdec_put_fb(struct mtk_vcodec_ctx *ctx, int type)
 			dst_buf = v4l2_m2m_dst_buf_remove(ctx->m2m_ctx);
 			if (ctx->state == MTK_STATE_FLUSH
 				|| ret != 0 || dst_buf == NULL) {
-				mtk_v4l2_debug(0, "wait EOS dst break!state %d, ret %d, dst_buf %p",
+				/* OSK: level 0→1: EOS drain end, normal operation */
+				mtk_v4l2_debug(1, "wait EOS dst break!state %d, ret %d, dst_buf %p",
 				ctx->state, ret, dst_buf);
 				return 0;
 			}
@@ -763,7 +764,8 @@ static void mtk_vdec_worker(struct work_struct *work)
 		 * buffer, need to flush decoder. Use the flush_buf
 		 * as normal EOS, and flush decoder.
 		 */
-		mtk_v4l2_debug(0, "[%d] EarlyEos: decode last frame %d",
+		/* OSK: level 0→1: normal EarlyEOS path */
+		mtk_v4l2_debug(1, "[%d] EarlyEos: decode last frame %d",
 			ctx->id, src_buf->planes[0].bytesused);
 		src_buf = v4l2_m2m_src_buf_remove(ctx->m2m_ctx);
 		src_vb2_v4l2->flags |= V4L2_BUF_FLAG_LAST;
@@ -1363,7 +1365,8 @@ static int vidioc_try_fmt(struct v4l2_format *f, struct mtk_video_fmt *fmt)
 			(pix_fmt_mp->height + 64) <= MTK_VDEC_MAX_H)
 			pix_fmt_mp->height += 64;
 
-		mtk_v4l2_debug(0,
+		/* OSK: level 0→2: S_FMT resize info, verbose debug only */
+		mtk_v4l2_debug(2,
 			"before resize width=%d, height=%d, after resize width=%d, height=%d, sizeimage=%d",
 			tmp_w, tmp_h, pix_fmt_mp->width,
 			pix_fmt_mp->height,
@@ -2335,7 +2338,8 @@ static void vb2ops_vdec_buf_queue(struct vb2_buffer *vb)
 
 	bs_fourcc = ctx->q_data[MTK_Q_DATA_SRC].fmt->fourcc;
 	fm_fourcc = ctx->q_data[MTK_Q_DATA_DST].fmt->fourcc;
-	mtk_v4l2_debug(0,
+	/* OSK: level 0→1: normal session init, noisy with Android 16 Codec2 probing */
+	mtk_v4l2_debug(1,
 				   "[%d] Init Vdec OK wxh=%dx%d pic wxh=%dx%d bitdepth:%d lo:%d sz[0]=0x%x sz[1]=0x%x",
 				   ctx->id,
 				   ctx->last_decoded_picinfo.buf_w,
@@ -2347,7 +2351,8 @@ static void vb2ops_vdec_buf_queue(struct vb2_buffer *vb)
 				   dst_q_data->sizeimage[0],
 				   dst_q_data->sizeimage[1]);
 
-	mtk_v4l2_debug(0, "[%d] bs %c%c%c%c fm %c%c%c%c, num_planes %d, fb_sz[0] %d, fb_sz[1] %d",
+	/* OSK: level 0→1: companion to Init Vdec OK, same session init path */
+	mtk_v4l2_debug(1, "[%d] bs %c%c%c%c fm %c%c%c%c, num_planes %d, fb_sz[0] %d, fb_sz[1] %d",
 				   ctx->id,
 				   bs_fourcc & 0xFF, (bs_fourcc >> 8) & 0xFF,
 				   (bs_fourcc >> 16) & 0xFF,
