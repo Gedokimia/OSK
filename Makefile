@@ -687,8 +687,26 @@ endif
 # Enable fast FMA optimizations
 KBUILD_CFLAGS += $(call cc-option,-ffp-contract=fast)
 
+# OSK: disable aggressive loop unrolling.
+# Clang O3 unrolls loops aggressively which inflates .text size by
+# 15-30%, increasing L1-I cache pressure in hot kernel paths (scheduler
+# tick, syscall, interrupt dispatch). Kernel loops are typically too
+# short or variable-length to benefit from unrolling, and the kernel
+# cannot use SIMD registers in most contexts. Explicit NEON routines
+# (memcpy, crypto) use their own unrolled assembly regardless of this.
+KBUILD_CFLAGS += $(call cc-option,-fno-unroll-loops)
+
 # Enable hot cold split optimization
 KBUILD_CFLAGS += $(call cc-option,-mllvm -hot-cold-split=true)
+
+# OSK: enable linker-level deduplication of identical code.
+# --icf=safe (Identical Code Folding, safe mode) merges functions with
+# identical bodies that are provably interchangeable. This reduces .text
+# size (typically 1-3% for kernel builds) and improves icache utilization
+# by eliminating duplicate hot-path helpers. Safe mode only folds
+# functions where address-taken identity is not observable.
+# Works with ThinLTO (already enabled via CONFIG_THINLTO=y).
+KBUILD_LDFLAGS += $(call ld-option,--icf=safe)
 
 # Enable MLGO for register allocation
 KBUILD_LDFLAGS += $(call cc-option,-mllvm -regalloc-enable-advisor=release)
@@ -752,7 +770,11 @@ KBUILD_CFLAGS += $(call cc-disable-warning, tautological-compare)
 # source of a reference will be _MergedGlobals and not on of the whitelisted names.
 # See modpost pattern 2
 KBUILD_CFLAGS += $(call cc-option, -mno-global-merge,)
-KBUILD_CFLAGS += $(call cc-option, -fcatch-undefined-behavior)
+# OSK: -fcatch-undefined-behavior removed. This is a sanitizer flag that
+# adds runtime UB checks without useful diagnostics in a release kernel.
+# CONFIG_UBSAN explicitly enables UB checking when required for debugging.
+# Removing it avoids branch overhead on every potentially-UB expression
+# in the hot scheduling, MM, and IPC paths.
 endif
 
 # These warnings generated too much noise in a regular build.

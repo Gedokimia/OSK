@@ -14,7 +14,15 @@ bool schedtune_initialized = false;
 extern struct reciprocal_value schedtune_spc_rdiv;
 
 /* We hold schedtune boost in effect for at least this long */
-#define SCHEDTUNE_BOOST_HOLD_NS 50000000ULL
+/*
+ * OSK: SCHEDTUNE_BOOST_HOLD_NS 50ms → 100ms.
+ * Boost persists for 100ms after a boosted task stops running.
+ * At 50ms, a game/emulator that has a 16ms render frame followed by
+ * a GPU-wait sleep could have its boost expire before the next frame
+ * starts, causing a cold ramp. 100ms covers 6 frames at 60fps,
+ * keeping the boost alive through the entire render-sleep-render cycle.
+ */
+#define SCHEDTUNE_BOOST_HOLD_NS 100000000ULL
 
 /*
  * EAS scheduler tunables for task groups.

@@ -752,10 +752,29 @@ static void set_load_weight(struct task_struct *p, bool update_load)
  */
 DEFINE_MUTEX(uclamp_mutex);
 
-/* Max allowed minimum utilization */
-unsigned int sysctl_sched_uclamp_util_min = SCHED_CAPACITY_SCALE;
+/*
+ * OSK: system-wide uclamp_util_min = 0 (no global floor).
+ * The default of SCHED_CAPACITY_SCALE (1024) created a system-wide
+ * UCLAMP_MIN=max for ALL CFS tasks in the root task group, which
+ * prevents DVFS from ever scaling below max OPP while any CFS task
+ * is runnable — completely defeating frequency scaling in practice.
+ *
+ * With 0: the system has no global OPP floor. Per-task and per-cgroup
+ * floors are applied where needed:
+ *   - top-app SF/audio threads: via oaks_classify_thread() (uclamp_min
+ *     floors 200-512 depending on thread role)
+ *   - game RenderThread: via task_turbo + oaks_notify_perf_scene()
+ *   - Android cgroups: via /dev/cpuset or schedtune boost values
+ * This allows DVFS to genuinely scale down during idle/background
+ * periods, improving battery life without sacrificing performance for
+ * threads that have explicit floors set.
+ */
+unsigned int sysctl_sched_uclamp_util_min = 0;
 
-/* Max allowed maximum utilization */
+/* Max allowed maximum utilization — keep at 1024: tasks must be able
+ * to use full CPU capacity when needed. Individual cgroups or tasks
+ * can set lower uclamp_max to cap specific processes (e.g. background
+ * cgroup capped at 512 to prevent thermal runaway from batch jobs). */
 unsigned int sysctl_sched_uclamp_util_max = SCHED_CAPACITY_SCALE;
 
 /*
@@ -773,7 +792,22 @@ unsigned int sysctl_sched_uclamp_util_max = SCHED_CAPACITY_SCALE;
  * This knob will not override the system default sched_util_clamp_min defined
  * above.
  */
-unsigned int sysctl_sched_uclamp_util_min_rt_default = SCHED_CAPACITY_SCALE;
+/*
+ * OSK: RT default uclamp_min = 512 (50% capacity) instead of 1024 (100%).
+ * SCHED_FIFO/SCHED_RR tasks on MT6768 include: audio FastMixer/FastCapture,
+ * IRQ threads (Mali GPU ISR, camera ISR), and a few HAL threads.
+ * Defaulting ALL of them to max capacity forces the DVFS governor to keep
+ * at least one CPU at max OPP whenever any RT task is runnable — even when
+ * the actual work is trivial (48kHz mix buffer fill, IRQ ACK).
+ * 512 = 50% capacity: still well above the baseline OPP for these tasks
+ * while allowing DVFS to scale down when the RT task finishes quickly.
+ * Tasks that genuinely need full capacity (vpud, GPU firmware, kernel
+ * crypto offload) set their own uclamp_min via sched_setattr or the
+ * driver's uclamp hooks (e.g. Mali r32p1 sets its own priority).
+ * This value is only applied to RT tasks with user_defined==false;
+ * any explicit sched_setattr(SCHED_FLAG_UTIL_CLAMP_MIN) overrides it.
+ */
+unsigned int sysctl_sched_uclamp_util_min_rt_default = 512;
 
 /* All clamps are required to be less or equal than these values */
 static struct uclamp_se uclamp_default[UCLAMP_CNT];

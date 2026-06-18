@@ -51,6 +51,12 @@ endif
 
 KBUILD_CFLAGS	+= -mgeneral-regs-only $(lseinstr) $(brokengasinst) $(compat_vdso)
 KBUILD_CFLAGS	+= -fno-asynchronous-unwind-tables
+# OSK: target Cortex-A55 as the ISA baseline (MT6768 primary cluster).
+# A55 supports ARMv8.2-A (crypto, dotprod, fp16). A75 is a strict
+# superset and runs A55 code without modification. The kernel runs
+# primarily on A55 cores (cpu0-5); better instruction scheduling for
+# A55 pipeline depths benefits OS overhead paths (scheduler, MM, IPC).
+KBUILD_CFLAGS	+= $(call cc-option,-mcpu=cortex-a55)
 KBUILD_CFLAGS	+= $(call cc-disable-warning, psabi)
 KBUILD_AFLAGS	+= $(lseinstr) $(brokengasinst) $(compat_vdso)
 
