@@ -320,10 +320,19 @@ static inline bool cgroup_check_set_turbo(struct task_struct *p)
 	if (p->turbo)
 		return false;
 
-	/* set critical tasks for UI or UX to turbo */
+	/*
+	 * OSK: set turbo for:
+	 * 1. RenderThread (p->render==1) — games/SF compositor
+	 * 2. App main thread (group_leader, parent!=init) — emulator JIT main
+	 * 3. Direct worker thread of an already-turbo main thread — emulator
+	 *    JIT workers, dynarec helper threads spawned by the turbo main.
+	 *    real_parent->turbo means the spawning thread is turbo (main thread).
+	 *    Still bounded to TURBO_PID_COUNT=8 total across all conditions.
+	 */
 	return (p->render ||
 	       (p == p->group_leader &&
-		p->real_parent->pid != 1));
+		p->real_parent->pid != 1) ||
+	       (p->real_parent && p->real_parent->turbo));
 }
 
 /*
