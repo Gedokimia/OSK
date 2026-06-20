@@ -710,7 +710,7 @@ KBUILD_CFLAGS += $(call cc-option,-mllvm -hot-cold-split=true)
 # by eliminating duplicate hot-path helpers. Safe mode only folds
 # functions where address-taken identity is not observable.
 # Works with ThinLTO (already enabled via CONFIG_THINLTO=y).
-KBUILD_LDFLAGS += $(call ld-option,--icf=safe)
+# KBUILD_LDFLAGS += $(call ld-option,--icf=safe)
 
 # OSK: -fno-semantic-interposition.
 # By default Clang must assume any non-static global function could be
