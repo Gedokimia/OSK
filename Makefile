@@ -708,6 +708,18 @@ KBUILD_CFLAGS += $(call cc-option,-mllvm -hot-cold-split=true)
 # Works with ThinLTO (already enabled via CONFIG_THINLTO=y).
 KBUILD_LDFLAGS += $(call ld-option,--icf=safe)
 
+# OSK: -fno-semantic-interposition.
+# By default Clang must assume any non-static global function could be
+# replaced at link time by a different definition (the ELF symbol
+# interposition rule for shared libraries), which blocks inlining and
+# devirtualization across translation units even under LTO. The kernel
+# is a single statically-linked image -- vmlinux is never dynamically
+# preloaded or symbol-interposed -- so this assumption is always false
+# here. Disabling it lets ThinLTO actually inline/specialize calls to
+# EXPORT_SYMBOL'd and other external-linkage functions across the
+# whole-kernel link, which it otherwise conservatively treats as opaque.
+KBUILD_CFLAGS += $(call cc-option,-fno-semantic-interposition)
+
 # Enable MLGO for register allocation
 KBUILD_LDFLAGS += $(call cc-option,-mllvm -regalloc-enable-advisor=release)
 

@@ -14,8 +14,27 @@ inline void futex_plist_add(struct futex_q *q, struct futex_hash_bucket *hb)
 	struct plist_node *current_node = &q->list;
 	struct plist_node *this_node;
 
-	if (!sub_feat_enable(SUB_FEAT_LOCK) &&
-	    !is_turbo_task(current)) {
+	/*
+	 * OSK: only take the O(n) scan-and-insert path when the CURRENT
+	 * (enqueuing) task is itself turbo. The previous condition was
+	 * `!sub_feat_enable(SUB_FEAT_LOCK) && !is_turbo_task(current)` --
+	 * since SUB_FEAT_LOCK is a global feature flag (task_turbo_feats
+	 * bitmask), once it is enabled system-wide (as of task_turbo_feats=15
+	 * default) EVERY futex_wait() call -- turbo or not -- fell through
+	 * to the linear plist_for_each_entry_safe() scan of the entire wait
+	 * chain. On a heavily-contended futex (e.g. a busy JNI/native mutex
+	 * with dozens of waiters) this turned every non-turbo thread's
+	 * enqueue into an O(n) operation, even though only turbo threads
+	 * (bounded to TURBO_PID_COUNT=8 system-wide) need priority-ordered
+	 * insertion ahead of non-PI/non-RT waiters.
+	 *
+	 * Non-turbo tasks now always take the O(1) plist_add() fast path,
+	 * regardless of whether SUB_FEAT_LOCK is globally enabled. Turbo
+	 * tasks (game RenderThread, emulator JIT main+workers) still get
+	 * priority-ordered insertion so they aren't stuck waiting behind
+	 * lower-priority holders of a contended lock.
+	 */
+	if (!is_turbo_task(current)) {
 		plist_add(&q->list, &hb->chain);
 		return;
 	}

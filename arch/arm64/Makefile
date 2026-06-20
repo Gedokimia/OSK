@@ -57,6 +57,18 @@ KBUILD_CFLAGS	+= -fno-asynchronous-unwind-tables
 # primarily on A55 cores (cpu0-5); better instruction scheduling for
 # A55 pipeline depths benefits OS overhead paths (scheduler, MM, IPC).
 KBUILD_CFLAGS	+= $(call cc-option,-mcpu=cortex-a55)
+# OSK: disable outline-atomics codegen.
+# -moutline-atomics emits a runtime CPU-feature check before every
+# atomic op, indirectly calling either an LL/SC or LSE implementation
+# depending on detected hardware -- needed only for a binary that must
+# run across pre-ARMv8.1 and ARMv8.1+ cores. This kernel is built for
+# one fixed SoC (MT6768, both A55 and A75 clusters are LSE-capable
+# ARMv8.2), so the dispatch is pure overhead on every atomic_inc/dec,
+# spinlock, and refcount operation -- among the hottest paths in the
+# kernel. $(lseinstr) above already enables direct LSE instruction
+# emission (CONFIG_AS_LSE), making the outline-atomics runtime check
+# entirely redundant.
+KBUILD_CFLAGS	+= $(call cc-option,-mno-outline-atomics)
 KBUILD_CFLAGS	+= $(call cc-disable-warning, psabi)
 KBUILD_AFLAGS	+= $(lseinstr) $(brokengasinst) $(compat_vdso)
 
