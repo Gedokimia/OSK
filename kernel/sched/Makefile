@@ -36,6 +36,6 @@ obj-$(CONFIG_MEMBARRIER) += membarrier.o
 obj-$(CONFIG_CPU_ISOLATION) += isolation.o
 obj-$(CONFIG_PSI) += psi.o
 
-obj-y += oaks.o
+obj-$(CONFIG_OAKS) += oaks.o
 obj-y += extension/
 

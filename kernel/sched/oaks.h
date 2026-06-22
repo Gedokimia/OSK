@@ -143,6 +143,8 @@ struct oaks_state {
 	atomic_t			pending_ctx;
 };
 
+#ifdef CONFIG_OAKS
+
 DECLARE_STATIC_KEY_FALSE(oaks_active);
 
 extern struct oaks_state oaks;
@@ -236,5 +238,37 @@ static inline bool oaks_want_big_cluster(struct task_struct *p)
 	return (p->pid  == READ_ONCE(oaks.perf.render_pid) ||
 		p->tgid == READ_ONCE(oaks.perf.main_pid));
 }
+
+#else /* !CONFIG_OAKS */
+
+/*
+ * CONFIG_OAKS=n stubs.
+ * Every symbol called unconditionally elsewhere in the tree (core.c
+ * scheduler_tick, cpufreq_schedutil.c, fs/exec.c __set_task_comm) gets
+ * a no-op/false-returning inline here so those call sites need no
+ * #ifdef of their own. The peripheral hooks in mm/oom_kill.c,
+ * mm/compaction.c, kernel/sysctl.c, drivers/input/input.c, and
+ * perf_ioctl.c are already wrapped in their own #ifdef CONFIG_OAKS
+ * blocks and simply compile out entirely.
+ */
+static inline void oaks_init(void) { }
+static inline void oaks_set_ctx(enum oaks_ctx ctx) { }
+static inline enum oaks_ctx oaks_get_ctx(void) { return OAKS_CTX_BALANCED; }
+static inline void oaks_notify_touch(void) { }
+static inline void oaks_notify_perf_scene(pid_t main_pid, pid_t render_pid,
+					   bool enter) { }
+static inline void oaks_tick(void) { }
+static inline void oaks_notify_frame_end(void) { }
+static inline void oaks_notify_vsync(unsigned int fps) { }
+static inline void oaks_classify_thread(struct task_struct *tsk) { }
+static inline bool oaks_in_perf(void) { return false; }
+static inline bool oaks_is_responsive(void) { return false; }
+static inline bool oaks_oom_guard(struct task_struct *p) { return false; }
+static inline bool oaks_want_big_cluster(struct task_struct *p)
+{
+	return false;
+}
+
+#endif /* CONFIG_OAKS */
 
 #endif /* _KERNEL_SCHED_OAKS_H */
