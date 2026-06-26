@@ -5691,6 +5691,17 @@ static void dequeue_task_fair(struct rq *rq, struct task_struct *p, int flags)
 		inc_nr_heavy_running(3, p, -1, false);
 #endif
 		sub_nr_running(rq, 1);
+		/*
+		 * 5.11: clear misfit_task_load when the last task on this
+		 * CPU dequeues. Without this, rq->misfit_task_load remains
+		 * non-zero until the next pick_next_task_fair(), causing
+		 * nohz_balancer_kick() to fire spurious IPI load-balance
+		 * requests on an idle CPU. On MT6768's asymmetric 6+2
+		 * topology this generates unnecessary cross-cluster migrations
+		 * during the sleep windows between game frames and audio
+		 * callbacks.
+		 */
+		update_misfit_status(NULL, rq);
 	}
 
 	util_est_dequeue(&rq->cfs, p, task_sleep);
@@ -11144,7 +11155,15 @@ static void nohz_balancer_kick(struct rq *rq)
 	if (time_before(now, nohz.next_balance))
 		goto out;
 
-	if (rq->nr_running >= 2 || rq->misfit_task_load) {
+	/*
+	 * 5.12: guard misfit kick with nr_running check. rq->misfit_task_load
+	 * can be non-zero on an idle CPU if dequeue_task_fair did not clear it
+	 * (stale value). A kick for misfit only makes sense when there is an
+	 * actual running task that can't fit on this CPU. Without nr_running
+	 * the balancer would wake a nohz-idle CPU for nothing.
+	 */
+	if (rq->nr_running >= 2 ||
+	    (rq->nr_running >= 1 && rq->misfit_task_load)) {
 		flags = NOHZ_KICK_MASK;
 		goto out;
 	}

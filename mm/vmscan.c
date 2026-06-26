@@ -516,8 +516,15 @@ static unsigned long do_shrink_slab(struct shrink_control *shrinkctl,
 	}
 
 	total_scan += delta;
+	/*
+	 * 5.9: cap before the < 0 check. When nr (from atomic_long_xchg)
+	 * is a large leftover from a prior shrinker pass and delta is small,
+	 * total_scan can overflow a signed long on 32-bit, triggering the
+	 * pr_err spuriously. Cap to freeable*2 first to keep total_scan
+	 * in range, then check for (the now-unlikely) negative case.
+	 */
 	if (total_scan < 0) {
-		pr_err("shrink_slab: %pF negative objects to delete nr=%ld\n",
+		pr_err_ratelimited("shrink_slab: %pF negative objects to delete nr=%ld\n",
 		       shrinker->scan_objects, total_scan);
 		total_scan = freeable;
 		next_deferred = nr;
