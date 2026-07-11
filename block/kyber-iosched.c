@@ -56,11 +56,33 @@ enum {
  * Even for fast devices with lots of tags like NVMe, you can saturate
  * the device with only a fraction of the maximum possible queue depth.
  * So, we cap these to a reasonable value.
+ *
+ * OSK: these stock values (256/128/64) are sized for NVMe-class storage
+ * with deep hardware queues. This device's eMMC command queue (CQHCI,
+ * drivers/mmc/host/cqhci.c) is hardware-capped at NUM_SLOTS=32 total
+ * outstanding requests, and mmc_init_queue() reports
+ * q_depth = min(card->ext_csd.cmdq_depth, host->cqe_qdepth) <= 32 as
+ * q->tag_set->queue_depth. But kyber_init_sched()'s
+ * max_tokens = max(queue_depth, KYBER_MIN_DEPTH) always selects
+ * KYBER_MIN_DEPTH=256 since it dominates a <=32 queue_depth, so these
+ * per-domain depths were never actually being clamped to what the
+ * hardware can service. The scheduler was admitting far more in-flight
+ * requests than the eMMC controller can ever process concurrently,
+ * which does not increase throughput (the device is still bottlenecked
+ * at 32 slots) but does increase the worst-case queueing latency for
+ * any single request stuck behind a deep backlog -- directly hurting
+ * UI-critical I/O (app launch, asset streaming, APK install) competing
+ * with bulk background reads/writes.
+ *
+ * Scaled to roughly the same proportions (READ:SYNC_WRITE:OTHER ==
+ * 4:2:1) at a ceiling that reflects the real 32-slot hardware queue,
+ * leaving headroom for Kyber's own internal accounting so the token
+ * pool isn't pinned exactly at the hardware limit.
  */
 static const unsigned int kyber_depth[] = {
-	[KYBER_READ] = 256,
-	[KYBER_SYNC_WRITE] = 128,
-	[KYBER_OTHER] = 64,
+	[KYBER_READ] = 32,
+	[KYBER_SYNC_WRITE] = 16,
+	[KYBER_OTHER] = 8,
 };
 
 /*
@@ -344,8 +366,30 @@ static struct kyber_queue_data *kyber_queue_data_alloc(struct request_queue *q)
 	shift = kyber_sched_tags_shift(kqd);
 	kqd->async_depth = (1U << shift) * KYBER_ASYNC_PERCENT / 100U;
 
-	kqd->read_lat_nsec = 2000000ULL;
-	kqd->write_lat_nsec = 10000000ULL;
+	/*
+	 * OSK: read/write latency targets raised from the stock NVMe-class
+	 * defaults (2ms/10ms).
+	 *
+	 * kyber_lat_status() classifies the measured mean latency against
+	 * this target: >= 2x target is AWFUL, > target is BAD, <= target/2
+	 * is GREAT. eMMC 5.1 HS400 random-read latency on this class of
+	 * storage typically runs 3-6ms even under light load, and can spike
+	 * well past that under any concurrent write pressure (the eMMC
+	 * command queue, CQHCI, is hardware-capped at 32 outstanding
+	 * requests total -- see kyber_depth[] above). At a 2ms read target,
+	 * essentially every real read was landing in AWFUL/BAD territory
+	 * permanently, driving kyber_adjust_rw_depth() to continuously
+	 * throttle read depth toward its floor -- the opposite of helpful
+	 * when the underlying device, not the scheduler's admitted queue
+	 * depth, is already the bottleneck.
+	 *
+	 * 6ms read / 20ms write keeps the controller responsive to genuine
+	 * latency regressions (a truly stalled/thermal-throttled eMMC will
+	 * still measure well past these) while giving normal HS400 random
+	 * I/O room to land in GOOD/GREAT instead of pinned at AWFUL.
+	 */
+	kqd->read_lat_nsec = 6000000ULL;
+	kqd->write_lat_nsec = 20000000ULL;
 
 	return kqd;
 
