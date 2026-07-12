@@ -41,9 +41,34 @@ extern void blk_sec_stats_account_io_done(
 
 #define MAX_ASYNC_WRITE_RQS	8
 
+/*
+ * OSK: write_expire 2*HZ -> HZ/2, max_write_starvation 4 -> 2.
+ *
+ * SSG dispatches writes only after either:
+ *   (a) reads have starved a write max_write_starvation times in a row, or
+ *   (b) the oldest queued write has been waiting since write_expire
+ * whichever comes first (see __ssg_dispatch_request() / ssg_check_fifo()).
+ *
+ * Android has near-continuous read activity during normal use (every UI
+ * interaction touches package/resource lookups, and background services
+ * poll files constantly), so condition (a) alone rarely fires -- writes
+ * end up waiting for the FIFO deadline in (b) far more often than the
+ * "soft limit" framing in the original comment suggests. At the stock
+ * 2*HZ (2 full seconds) and starvation count of 4, a synchronous write
+ * (SQLite commit, SharedPreferences fsync, log flush -- all of which
+ * block the calling app thread, frequently the UI thread) can measurably
+ * stall for up to 2 seconds under read pressure that is effectively the
+ * device's normal operating condition, not an edge case.
+ *
+ * HZ/2 (500ms) still gives the scheduler real room to batch and reorder
+ * writes for efficiency, and max_write_starvation=2 means at most every
+ * other read-dispatch round yields to a pending write, bounding the
+ * worst case to roughly 500ms instead of 2s while still favoring reads
+ * overall for interactive responsiveness.
+ */
 static const int read_expire = HZ / 5;		/* max time before a read is submitted. */
-static const int write_expire = 2 * HZ;		/* ditto for writes, these limits are SOFT! */
-static const int max_write_starvation = 4;	/* max times reads can starve a write */
+static const int write_expire = HZ / 2;	/* ditto for writes, these limits are SOFT! */
+static const int max_write_starvation = 2;	/* max times reads can starve a write */
 static const int congestion_threshold = 75;	/* percentage of congestion threshold */
 static const int max_tgroup_io_ratio = 50;	/* maximum service ratio for each thread group */
 static const int max_async_write_ratio = 25;	/* maximum service ratio for async write */

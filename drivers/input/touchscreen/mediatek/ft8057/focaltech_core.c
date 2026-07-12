@@ -1022,7 +1022,7 @@ static int fts_irq_read_report(struct fts_ts_data *ts_data)
         }
 
         if (event_num == 0) {
-            FTS_INFO("no touch point information(%02x)", touch_buf[2]);
+            FTS_INFO_RATELIMITED("no touch point information(%02x)", touch_buf[2]);
             return -EIO;
         }
         ts_data->touch_event_num = event_num;

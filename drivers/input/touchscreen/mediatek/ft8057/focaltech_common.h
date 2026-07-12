@@ -175,6 +175,21 @@ struct ts_ic_info {
     printk(KERN_INFO "[FTS_TS/I]%s:"fmt"\n", __func__, ##args); \
 } while (0)
 
+/*
+ * OSK: rate-limited variant of FTS_INFO for conditions that occur as part
+ * of normal, expected touch-report processing (e.g. the "no touch point"
+ * event that fires on every finger lift) rather than genuine hardware or
+ * firmware faults. Using plain FTS_INFO for these floods dmesg on every
+ * touch interaction and adds printk overhead (string formatting + the
+ * console/log-buffer spinlock) directly on the touch-report processing
+ * thread -- the same thread that determines touch-to-screen latency.
+ * Genuine error conditions should keep using FTS_ERROR/FTS_INFO unratelimited
+ * so real faults remain fully visible in logs.
+ */
+#define FTS_INFO_RATELIMITED(fmt, args...) do { \
+    printk_ratelimited(KERN_INFO "[FTS_TS/I]%s:"fmt"\n", __func__, ##args); \
+} while (0)
+
 #define FTS_ERROR(fmt, args...) do { \
     printk(KERN_ERR "[FTS_TS/E]%s:"fmt"\n", __func__, ##args); \
 } while (0)
