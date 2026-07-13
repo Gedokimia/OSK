@@ -3222,6 +3222,21 @@ static void update_cfs_group(struct sched_entity *se)
 #else
 	shares   = calc_group_shares(gcfs_rq);
 	runnable = calc_group_runnable(gcfs_rq, shares);
+
+	/*
+	 * OSK: skip reweight_entity() when nothing actually changed.
+	 * Backport of the 6.1-era short-circuit: calc_group_shares()/
+	 * calc_group_runnable() must still run every time to know whether
+	 * the value changed, but reweight_entity() itself does real,
+	 * non-trivial work on every call -- update_curr(), a full
+	 * load-average dequeue+enqueue cycle, and two 64-bit divisions --
+	 * that was previously paid unconditionally on every enqueue/dequeue
+	 * of every CONFIG_FAIR_GROUP_SCHED entity (this device has cgroups
+	 * active via CONFIG_CPUSETS/CONFIG_BLK_CGROUP), even when the
+	 * group's share of CPU time hadn't moved since the last update.
+	 */
+	if (likely(se->load.weight == shares && se->runnable_weight == runnable))
+		return;
 #endif
 
 	reweight_entity(cfs_rq_of(se), se, shares, runnable);
