@@ -43,6 +43,21 @@ warning-1 += $(call cc-option, -Wunused-const-variable)
 warning-1 += $(call cc-option, -Wpacked-not-aligned)
 warning-1 += $(call cc-disable-warning, missing-field-initializers)
 warning-1 += $(call cc-disable-warning, sign-compare)
+# OSK: -Wimplicit-fallthrough, opt-in via W=1.
+# The fallthrough pseudo-keyword (include/linux/compiler_attributes.h)
+# is already present in this tree, but nothing previously enabled the
+# compiler flag that actually enforces it. This class of bug is not
+# hypothetical here: the vidioc_vdec_s_fmt() EBUSY fall-through bug
+# found and fixed in drivers/media/platform/mtk-vcodec/mtk_vcodec_dec.c
+# (an if-block falling through into code that corrupted decoder state
+# instead of returning) is exactly the shape of mistake this catches
+# at compile time in switch statements. Left at W=1 rather than
+# default-on: this tree's large vendor driver surface has 78+
+# pre-existing comment-style fallthrough markers in kernel/mm/fs alone
+# that were never audited against this specific warning's comment-
+# recognition heuristic, and turning it on unconditionally would add
+# warning noise to every normal build rather than surfacing real bugs.
+warning-1 += $(call cc-option, -Wimplicit-fallthrough)
 
 warning-2 := -Waggregate-return
 warning-2 += -Wcast-align
