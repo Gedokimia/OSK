@@ -116,7 +116,19 @@ CONFIG_CRYPTO_CHACHA20_NEON=y
 CONFIG_CRYPTO_SHA1_ARM64_CE=y
 CONFIG_CRYPTO_GHASH_ARM64_CE=y
 CONFIG_F2FS_FS_COMPRESSION=y
+#
+# OSK: EROFS per-CPU decompression kthreads at high priority. Without
+# this, fs/erofs/zdata.c's erofs_init_percpu_worker() falls to
+# sched_set_normal(worker->task, 0) -- ordinary SCHED_OTHER priority --
+# for the per-CPU decompression kthread pool, meaning EROFS
+# decompression work competes with regular CFS tasks for CPU time.
+# HIPRI switches this to sched_set_fifo_low(), a real-time priority
+# below true RT tasks but above all SCHED_OTHER work, so decompression
+# bursts (reading system libraries, read-only partition content during
+# app launch) aren't delayed by ordinary scheduling contention.
+#
 CONFIG_EROFS_FS_PCPU_KTHREAD=y
+CONFIG_EROFS_FS_PCPU_KTHREAD_HIPRI=y
 CONFIG_OVERLAY_FS_REDIRECT_ALWAYS_FOLLOW=n
 CONFIG_NET_ACT_GACT=y
 CONFIG_NET_ACT_BPF=y
@@ -467,6 +479,32 @@ CONFIG_VIDEO_MEDIATEK_VCODEC=y
 CONFIG_MTK_GPU_SUPPORT=y
 CONFIG_MTK_GPU_VERSION="mali valhall r32p1"
 CONFIG_MTK_GPU_COMMON_DVFS_SUPPORT=y
+#
+# OSK: Mali Valhall r32p1 (drivers/gpu/mediatek/gpu_mali/mali_valhall/
+# mali-r32p1/) driver options.
+#
+# MALI_GATOR_SUPPORT was never set anywhere in this defconfig, which
+# meant it was silently taking its own Kconfig default of y (see
+# .../midgard/Kconfig: "default y", depends on MALI_MIDGARD which is
+# definitely active). This exports GPU job-submission and power-state
+# tracepoints (mali_job_slots_event, mali_pm_status,
+# mali_page_fault_insert_pages, mali_total_alloc_pages_change) via
+# EXPORT_TRACEPOINT_SYMBOL_GPL, fired on every GPU job atom submitted
+# and every power-state transition -- squarely on the GED/DVFS hot
+# path this tree has had extensive tuning work done on. These
+# tracepoints only produce data for ARM's Streamline Performance
+# Analyzer, proprietary host-side tooling essentially never used
+# outside ARM's own driver development. Explicitly disabled.
+#
+# MALI_DEBUG is already off via MALI_EXPERT's own default=n (MALI_DEBUG
+# depends on MALI_MIDGARD && MALI_EXPERT, default n; MALI_EXPERT itself
+# depends on MALI_MIDGARD, default n; neither is selected anywhere in
+# this tree). Made explicit here so it stays a deliberate, auditable
+# decision rather than an implicit default that could silently change
+# if MALI_EXPERT is ever touched without this defconfig being revisited.
+#
+# CONFIG_MALI_GATOR_SUPPORT is not set
+# CONFIG_MALI_DEBUG is not set
 CONFIG_FB_MODE_HELPERS=y
 CONFIG_FB_TILEBLITTING=y
 CONFIG_LOGO=y
