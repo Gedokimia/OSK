@@ -1137,6 +1137,18 @@ config SCHED_BORE
 	  responsiveness especially under heavy background workload.
 
 	  If unsure, say Y here.
+config OAKS
+	bool "OAKS - Optimized Adaptive Kernel Scheduler"
+	depends on SCHED_BORE
+	default y
+	help
+	  Context-driven scheduler extension for asymmetric CPU topologies.
+	  Supports BATTERY/BALANCED/RESPONSIVE/PERF contexts. Designed for
+	  MediaTek G85.
+
+	  Exposes /sys/kernel/oaks/ sysfs interface.
+
+	  If unsure, say Y here.
 
 config SCHED_AUTOGROUP
 	bool "Automatic process group scheduling"

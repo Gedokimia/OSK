@@ -74,6 +74,15 @@
 
 #include <linux/uaccess.h>
 #include <asm/processor.h>
+/* Backport: upstream added these in 5.15/5.16, not present in 4.19 */
+#ifndef SYSCTL_EIGHT
+static int sysctl_eight_val = 8;
+# define SYSCTL_EIGHT           (&sysctl_eight_val)
+#endif
+#ifndef SYSCTL_INT_MAX
+static int sysctl_intmax_val = INT_MAX;
+# define SYSCTL_INT_MAX         (&sysctl_intmax_val)
+#endif
 
 #ifdef CONFIG_X86
 #include <asm/nmi.h>
@@ -172,9 +181,6 @@ static int __maybe_unused bore_three       = 3;
 static int __maybe_unused bore_sixty_four  = 64;
 static int __maybe_unused bore_maxbits12   = 4095;
 #endif // CONFIG_SCHED_BORE
-#ifdef CONFIG_OAKS
-extern unsigned int sysctl_sched_pelt_halflife;
-#endif // CONFIG_OAKS
 
 /*
  * This is needed for proc_doulongvec_minmax of sysctl_hung_task_timeout_secs
@@ -1417,17 +1423,6 @@ static struct ctl_table kern_table[] = {
 		.proc_handler	= proc_douintvec,
 	},
 #endif // CONFIG_SCHED_BORE
-#ifdef CONFIG_OAKS
-	{
-		.procname	= "sched_pelt_halflife",
-		.data		= &sysctl_sched_pelt_halflife,
-		.maxlen		= sizeof(unsigned int),
-		.mode		= 0644,
-		.proc_handler	= proc_douintvec_minmax,
-		.extra1		= SYSCTL_EIGHT,
-		.extra2		= SYSCTL_INT_MAX,
-	},
-#endif // CONFIG_OAKS
 	{
 		.procname	= "panic_on_warn",
 		.data		= &panic_on_warn,
