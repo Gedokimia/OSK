@@ -698,13 +698,14 @@ CONFIG_MTK_SYSTRACKER_V2=n
 CONFIG_MTK_SYSTRACKER_DISABLE=y
 # Pseudo filesystems
 CONFIG_TMPFS_XATTR=y
-# LTO
+# LTO (ThinLTO only -- CONFIG_LTO_CLANG_FULL is not a valid symbol in
+# this Kconfig scheme, arch/Kconfig only exposes THINLTO as a toggle
+# under LTO_CLANG; leaving THINLTO=y is what keeps this off full LTO)
 CONFIG_LTO=y
 CONFIG_ARCH_SUPPORTS_LTO_CLANG=y
 CONFIG_LTO_CLANG=y
 # CONFIG_LTO_NONE is not set
 CONFIG_ARCH_SUPPORTS_THINLTO=y
-# CONFIG_LTO_CLANG_FULL is not set
 CONFIG_THINLTO=y
 # CFI
 CONFIG_CFI_CLANG=n
@@ -715,29 +716,18 @@ CONFIG_KSU_SUSFS=y
 CONFIG_KSU_HACK_ARM64_BRANCH_LINK=y
 # NoMount
 CONFIG_NOMOUNT=y
-# LLVM Polly
-CONFIG_LLVM_POLLY=y
+# LLVM Polly -- disabled: AOSP prebuilt clang r596125 is not
+# guaranteed to ship polly; -mllvm -polly is gated by cc-option at
+# the flag level but the polly passes themselves are not, so leave off
+# CONFIG_LLVM_POLLY is not set
 # TCP Congestion
 CONFIG_TCP_CONG_ADVANCED=y
 CONFIG_TCP_CONG_BBRPLUS=y
 CONFIG_DEFAULT_BBRPLUS=y
-# LTO
-CONFIG_LTO=y
-CONFIG_ARCH_SUPPORTS_LTO_CLANG=y
-CONFIG_LTO_CLANG=y
-# CONFIG_LTO_NONE is not set
-CONFIG_ARCH_SUPPORTS_THINLTO=y
-# CONFIG_LTO_CLANG_FULL is not set
-CONFIG_THINLTO=y
-# CFI
-CONFIG_CFI_CLANG=n
-CONFIG_SHADOW_CALL_STACK=n
 # MultiGen-LRU
 CONFIG_LRU_GEN=y
 CONFIG_LRU_GEN_ENABLED=y
 CONFIG_LRU_GEN_STATS=y
-# LLVM Polly
-CONFIG_LLVM_POLLY=y
 #EXTRAS
 CONFIG_CRYPTO_LZ4=y
 CONFIG_ZRAM_DEF_COMP="lz4"

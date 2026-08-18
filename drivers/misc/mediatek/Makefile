@@ -1,5 +1,12 @@
 export MTK_PLATFORM := $(subst $(quote),,$(CONFIG_MTK_PLATFORM))
 subdir-ccflags-y := -Werror $(call cc-disable-warning, unused-but-set-variable)
+# Force -O3 tree-wide for drivers/misc/mediatek/*. Last -O flag on the
+# clang cmdline wins, so this overrides whatever CC_OPTIMIZE_FOR_* / any
+# stray per-file -O2 picks. No OBJECT_FILES_NON_LTO opt-outs exist under
+# this directory, so every object here already participates in LTO
+# (CONFIG_LTO_CLANG + CONFIG_THINLTO from the top-level Kconfig) with
+# no further action needed.
+subdir-ccflags-y += -O3
 subdir-ccflags-y += -I$(srctree)/drivers/misc/mediatek/include
 subdir-ccflags-y += -I$(srctree)/drivers/misc/mediatek/include/mt-plat/$(MTK_PLATFORM)/include
 subdir-ccflags-y += -I$(srctree)/drivers/misc/mediatek/include/mt-plat/

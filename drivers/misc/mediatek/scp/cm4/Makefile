@@ -24,7 +24,7 @@ ccflags-$(CONFIG_MTK_EMI_LEGACY) += -I$(srctree)/drivers/misc/mediatek/emi/$(CON
 ccflags-y += -I$(srctree)/drivers/devfreq/
 ccflags-y += -I$(srctree)/drivers/misc/mediatek/include/mt-plat/
 
-#ifeq ($(CONFIG_MTK_ENG_BUILD),y)
+ifeq ($(CONFIG_MTK_ENG_BUILD),y)
 CFLAGS_scp_logger.o += -DDEBUG
 CFLAGS_scp_helper.o += -DDEBUG
 CFLAGS_scp_excep.o += -DDEBUG
@@ -32,7 +32,7 @@ CFLAGS_scp_ipi.o += -DDEBUG
 CFLAGS_scp_irq.o += -DDEBUG
 CFLAGS_scp_dvfs.o += -DDEBUG
 CFLAGS_scp_scpctl.o += -DDEBUG
-#endif
+endif
 
 ccflags-$(CONFIG_MTK_PMIC_CHIP_MT6335)+= -I$(srctree)/drivers/misc/mediatek/pmic/include/mt6335
 ccflags-$(CONFIG_MTK_PMIC_CHIP_MT6353)+= -I$(srctree)/drivers/misc/mediatek/pmic/include/mt6353
