@@ -2620,16 +2620,18 @@ static void __mt_gpufreq_setup_opp_table(struct g_opp_table_info *freqs, int num
 				__func__, i, freqs[i].gpufreq_khz,
 				freqs[i].gpufreq_volt, freqs[i].gpufreq_vsram);
 	}
-
-	/* setup segment max/min opp_idx */
-	if (g_segment_id == MT6767_SEGMENT)
-		g_segment_max_opp_idx = 15;
-	else if (g_segment_id == MT6769T_SEGMENT)
-		g_segment_max_opp_idx = 2;
-	else if (g_segment_id == MT6769Z_SEGMENT)
-		g_segment_max_opp_idx = 0;
-	else
-		g_segment_max_opp_idx = 7;
+	/* setup segment max/min opp_idx
+	 * OSK: unlock DVFS ceiling to true OPP0
+	 * for every segment instead of MTK's stock binning caps (idx
+	 * 7/15/2 depending on efuse-reported segment). The full 0-31
+	 * table is already voltage-correct per-index (GPUOP() pairs
+	 * freq/volt/vsram), so this is a yield/binning gate being
+	 * removed, not a voltage safety cutoff. GED's DVFS governor
+	 * margin was already tightened (see ged_dvfs.c) but couldn't
+	 * reach past whatever ceiling this function set -- that was
+	 * the actual bottleneck, not the governor margin itself.
+	 */
+	g_segment_max_opp_idx = 0;
 
 	g_segment_min_opp_idx = 31;
 
