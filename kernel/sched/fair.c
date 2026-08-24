@@ -36,9 +36,20 @@
  *  run vmstat and monitor the context-switches (cs) field)
  *
  * (default: 6ms * (1 + ilog(ncpus)), units: nanoseconds)
+ *
+ * OSK: 24ms->8ms. Companion to the schedutil A75 up_rate_limit
+ * tuning (game render bursts are 2-6ms/frame) -- 24ms meant a task
+ * could wait a full scheduling period before its next turn even
+ * under light contention. 8ms keeps the sched_nr_latency ratio
+ * intact (24/3=8, 8/1=8, see sysctl_sched_min_granularity below),
+ * so this is a straight tightening, not a different regime.
+ * Tradeoff: more re-scheduling events under heavy multi-task
+ * contention (compile jobs, batch background work), traded for
+ * shorter worst-case turnaround for latency-sensitive threads
+ * (input, render, audio).
  */
-unsigned int sysctl_sched_latency			= 24000000ULL;
-unsigned int normalized_sysctl_sched_latency		= 24000000ULL;
+unsigned int sysctl_sched_latency			= 8000000ULL;
+unsigned int normalized_sysctl_sched_latency		= 8000000ULL;
 
 /*
  * Enable/disable honoring sync flag in energy-aware wakeups.
@@ -67,9 +78,15 @@ enum sched_tunable_scaling sysctl_sched_tunable_scaling = SCHED_TUNABLESCALING_N
  * Minimal preemption granularity for CPU-bound tasks:
  *
  * (default: 0.75 msec * (1 + ilog(ncpus)), units: nanoseconds)
+ *
+ * OSK: 3ms->1ms, paired with sysctl_sched_latency 24ms->8ms above
+ * (ratio held at 8). A CPU-bound task could previously run
+ * uninterrupted for up to 3ms before becoming preemptible even
+ * with a runnable higher-priority-by-wakeup task waiting; 1ms caps
+ * that window closer to a single frame's input-to-render budget.
  */
-unsigned int sysctl_sched_min_granularity		= 3000000ULL;
-unsigned int normalized_sysctl_sched_min_granularity	= 3000000ULL;
+unsigned int sysctl_sched_min_granularity		= 1000000ULL;
+unsigned int normalized_sysctl_sched_min_granularity	= 1000000ULL;
 
 /*
  * This value is kept at sysctl_sched_latency/sysctl_sched_min_granularity
@@ -90,9 +107,17 @@ unsigned int sysctl_sched_child_runs_first __read_mostly;
  * have immediate wakeup/sleep latencies.
  *
  * (default: 1 msec * (1 + ilog(ncpus)), units: nanoseconds)
+ *
+ * OSK: 4ms->1ms. This is the direct knob for how much head start a
+ * currently-running task gets over a task that just woke up before
+ * the woken task can preempt it -- lower means a newly-woken input/
+ * render/audio thread gets the CPU sooner instead of waiting out
+ * the current task's remaining slice. Tradeoff: more preemptions
+ * (and their context-switch cost) when many threads are waking up
+ * in quick succession under heavy contention.
  */
-unsigned int sysctl_sched_wakeup_granularity		= 4000000UL;
-unsigned int normalized_sysctl_sched_wakeup_granularity	= 4000000UL;
+unsigned int sysctl_sched_wakeup_granularity		= 1000000UL;
+unsigned int normalized_sysctl_sched_wakeup_granularity	= 1000000UL;
 
 const_debug unsigned int sysctl_sched_migration_cost	= 500000UL;
 
