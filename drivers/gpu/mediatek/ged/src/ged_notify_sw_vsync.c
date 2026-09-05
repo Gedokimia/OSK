@@ -23,9 +23,21 @@
 #include "ged_monitor_3D_fence.h"
 #include "ged.h"
 
-#undef CONFIG_MTK_QOS_V1_SUPPORT
+/* OSK: this file previously had a stray #undef CONFIG_MTK_QOS_V1_SUPPORT
+ * sitting right here, and every #ifdef in this file (and in
+ * ged_dvfs.c) checked that same _SUPPORT-suffixed name. That symbol
+ * never existed as a Kconfig entry anywhere in this tree -- the real,
+ * active symbol is CONFIG_MTK_QOS_V1 (drivers/misc/mediatek/base/
+ * power/Kconfig), which defaults to y for MACH_MT6768 and is
+ * confirmed on via /proc/config.gz on device. GED's own bandwidth
+ * code was checking the wrong name entirely, so it was dead
+ * regardless of the stray undef or anything else -- fixed all
+ * #ifdef CONFIG_MTK_QOS_V1_SUPPORT sites in this file and ged_dvfs.c
+ * to check CONFIG_MTK_QOS_V1 instead, and removed the now-redundant
+ * undef.
+ */
 
-#ifdef CONFIG_MTK_QOS_V1_SUPPORT
+#ifdef CONFIG_MTK_QOS_V1
 #include <mtk_gpu_bw.h>
 #endif
 
@@ -406,7 +418,7 @@ void ged_dvfs_gpu_clock_switch_notify(bool bSwitch)
 
 	if (bSwitch) {
 		ged_gpu_power_on_notified = true;
-#ifdef CONFIG_MTK_QOS_V1_SUPPORT
+#ifdef CONFIG_MTK_QOS_V1
 		mt_gpu_bw_toggle(1);
 #endif
 		g_ns_gpu_on_ts = ged_get_time();
@@ -422,7 +434,7 @@ void ged_dvfs_gpu_clock_switch_notify(bool bSwitch)
 			timer_switch(true);
 		}
 	} else {
-#ifdef CONFIG_MTK_QOS_V1_SUPPORT
+#ifdef CONFIG_MTK_QOS_V1
 		mt_gpu_bw_toggle(0);
 #endif
 		ged_gpu_power_off_notified = true;

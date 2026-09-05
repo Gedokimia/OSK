@@ -17,7 +17,7 @@
 #include "ged_gpufreq.h"
 #endif
 
-#ifdef CONFIG_MTK_QOS_V1_SUPPORT
+#ifdef CONFIG_MTK_QOS_V1
 #include <mtk_gpu_bw.h>
 #endif
 
@@ -429,8 +429,18 @@ void ged_dvfs_get_bw_record(unsigned int *pui32MaxBW,
 	/* mt_gpufreq_BW_compute();
 	 * reserve for experiment
 	 */
-#ifdef CONFIG_MTK_QOS_V1_SUPPORT
+#ifdef CONFIG_MTK_QOS_V1
+	/*
+	 * OSK: mt_gpu_bw_get_BW() returns (unsigned int)-1 on SSPM IPI
+	 * failure (mt_gpu_bw_ap2sspm() in mtk_gpu_bw.c). Without this
+	 * check that sentinel flows straight into the bandwidth QoS
+	 * request below as ~4.29GB/s on any SSPM firmware build that
+	 * doesn't implement QOS_IPI_GET_GPU_BW -- fall back to 0 (no
+	 * boost requested) instead.
+	 */
 	ui32MaxBW = mt_gpu_bw_get_BW(0);
+	if (ui32MaxBW == (unsigned int)-1)
+		ui32MaxBW = 0;
 	ui32AvgBW = 0;/* mt_gpu_bw_get_BW(1); This is reserved for experiment */
 #endif
 	if (gpu_av_loading)
@@ -1234,7 +1244,7 @@ static int ged_dvfs_fb_gpu_dvfs(int t_gpu, int t_gpu_target,
 
 	ret_freq = gpu_freq_tar;
 FB_RET:
-#ifdef CONFIG_MTK_QOS_V1_SUPPORT
+#ifdef CONFIG_MTK_QOS_V1
 	mt_gpu_bw_qos_vcore(ged_dvfs_vcore(gpu_freq_pre,
 		mt_gpufreq_get_cur_freq(), true));
 #endif
@@ -1515,7 +1525,7 @@ static bool ged_dvfs_policy(
 	g_policy_tar_freq = mt_gpufreq_get_freq_by_idx(i32NewFreqID);
 	g_mode = 2;
 
-#ifdef CONFIG_MTK_QOS_V1_SUPPORT
+#ifdef CONFIG_MTK_QOS_V1
 	return GED_TRUE;
 #else
 	return ((*pui32NewFreqID != ui32GPUFreq) || ged_log_perf_trace_enable)
@@ -2019,7 +2029,7 @@ void ged_dvfs_run(unsigned long t, long phase, unsigned long ul3DFenceDoneTime)
 						mt_gpufreq_get_freq_by_idx(
 						g_ui32FreqIDFromPolicy),
 						GED_DVFS_DEFAULT_COMMIT);
-#ifdef CONFIG_MTK_QOS_V1_SUPPORT
+#ifdef CONFIG_MTK_QOS_V1
 				mt_gpu_bw_qos_vcore(ged_dvfs_vcore(gpu_freq_pre,
 					mt_gpufreq_get_cur_freq(), false));
 #endif
@@ -2345,7 +2355,7 @@ GED_ERROR ged_dvfs_system_init(void)
 	g_gpu_timer_based_emu = 1;
 #endif
 
-#ifdef CONFIG_MTK_QOS_V1_SUPPORT
+#ifdef CONFIG_MTK_QOS_V1
 	/* default as %100 */
 	gpu_bw_ratio = 100;
 #endif
@@ -2418,7 +2428,7 @@ void ged_dvfs_system_exit(void)
 	mutex_destroy(&gsVSyncOffsetLock);
 }
 
-#ifdef CONFIG_MTK_QOS_V1_SUPPORT
+#ifdef CONFIG_MTK_QOS_V1
 module_param(gpu_bw_ratio, uint, 0644);
 #endif
 
