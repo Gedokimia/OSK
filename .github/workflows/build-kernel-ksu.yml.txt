@@ -1,4 +1,4 @@
-name: Build Kernel (Clang LLVM full + KernelSU, 4.19 only)
+name: GithubActionBuilder
 
 on:
   workflow_dispatch:
@@ -6,15 +6,15 @@ on:
       kernel_repo:
         description: 'owner/repo kernel source'
         required: true
-        default: 'USER/kernel_manufacturer_codename'
+        default: 'JeanneDarc-star/OSK'
       kernel_branch:
         description: 'Branch kernel yang mau di-build'
         required: true
-        default: 'lineage-20'
+        default: 'Sarkazz-OC'
       defconfig:
         description: 'Nama defconfig (relatif ke arch/<ARCH>/configs/)'
         required: true
-        default: 'vendor/codename_defconfig'
+        default: 'earth_defconfig'
       ksu_ref:
         description: 'Arg ke KernelSU (backslashxx fork) setup.sh, kosong = default branch'
         required: false
