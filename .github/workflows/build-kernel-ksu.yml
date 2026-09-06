@@ -1,4 +1,4 @@
-name: githubactionbuilder
+name: Build Kernel (Clang LLVM ThinLTO + KernelSU, 4.19 only)
 
 on:
   workflow_dispatch:
@@ -36,6 +36,7 @@ jobs:
     steps:
       - name: Free disk space
         run: |
+          rm -rf "${KDIR}" clang AnyKernel3 artifacts 2>/dev/null || true
           sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc \
             /opt/hostedtoolcache/CodeQL /usr/local/share/boost || true
           sudo docker image prune --all --force || true
@@ -66,6 +67,8 @@ jobs:
           sudo apt-get install -y bc bison flex cpio libssl-dev \
             libelf-dev dwarves zstd lz4 python3 git curl zip \
             gcc-aarch64-linux-gnu gcc-arm-linux-gnueabihf
+          sudo apt-get clean
+          sudo rm -rf /var/lib/apt/lists/*
 
       - name: Fetch clang toolchain
         run: |
@@ -134,3 +137,9 @@ jobs:
           name: kernel-${{ github.event.inputs.kernel_branch }}-ksu
           path: artifacts/*
           retention-days: 14
+
+      - name: Cleanup workspace
+        if: always()
+        run: |
+          rm -rf "${KDIR}" clang AnyKernel3
+          df -h /
