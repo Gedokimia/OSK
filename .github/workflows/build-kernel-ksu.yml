@@ -1,4 +1,4 @@
-name: Build Kernel (Clang LLVM ThinLTO + KernelSU, 4.19 only)
+name: Build Kernel (Clang + KernelSU)
 
 on:
   workflow_dispatch:
@@ -41,6 +41,14 @@ jobs:
             /opt/hostedtoolcache/CodeQL /usr/local/share/boost || true
           sudo docker image prune --all --force || true
           df -h /
+
+      - name: Add swap
+        run: |
+          sudo fallocate -l 8G /swapfile
+          sudo chmod 600 /swapfile
+          sudo mkswap /swapfile
+          sudo swapon /swapfile
+          free -h
 
       - name: Checkout kernel source
         uses: actions/checkout@v6
@@ -87,6 +95,17 @@ jobs:
           curl -LSs "$KSU_SETUP_URL" | bash -s ${{ github.event.inputs.ksu_ref }}
           test -d drivers/kernelsu || { echo "KSU inject gagal, drivers/kernelsu tidak ada"; exit 1; }
 
+      - name: Enable ThinLTO
+        working-directory: ${{ env.KDIR }}
+        run: |
+          CFG="arch/${ARCH}/configs/${{ github.event.inputs.defconfig }}"
+          test -f "$CFG" || { echo "defconfig tidak ditemukan: $CFG"; exit 1; }
+          sed -i '/CONFIG_LTO_CLANG_THIN/d;/CONFIG_LTO_CLANG_FULL/d;/^CONFIG_LTO_CLANG=/d;/^# CONFIG_LTO_CLANG is not set/d' "$CFG"
+          printf '%s\n' \
+            'CONFIG_LTO_CLANG=y' \
+            'CONFIG_LTO_CLANG_THIN=y' \
+            '# CONFIG_LTO_CLANG_FULL is not set' >> "$CFG"
+
       - name: Build kernel
         working-directory: ${{ env.KDIR }}
         env:
@@ -127,16 +146,23 @@ jobs:
             exit 1
           fi
           cd AnyKernel3
-          zip -r9 "../artifacts/kernel-${{ github.event.inputs.kernel_branch }}-ksu-anykernel3.zip" . -x '.git*'
-          cd ..
-          cp "${KDIR}/out/build.log" artifacts/ 2>/dev/null || true
+          zip -r9 "../artifacts/AK3-Prima-ExT4.zip" . -x '.git*'
 
-      - name: Upload artifact
+      - name: Upload kernel zip
         uses: actions/upload-artifact@v6
         with:
-          name: kernel-${{ github.event.inputs.kernel_branch }}-ksu
-          path: artifacts/*
+          name: AK3-Prima-ExT4
+          path: artifacts/AK3-Prima-ExT4.zip
           retention-days: 14
+
+      - name: Upload build log
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: build-log
+          path: ${{ env.KDIR }}/out/build.log
+          retention-days: 14
+          if-no-files-found: warn
 
       - name: Cleanup workspace
         if: always()
