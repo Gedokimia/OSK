@@ -42,14 +42,6 @@ jobs:
           sudo docker image prune --all --force || true
           df -h /
 
-      - name: Add swap
-        run: |
-          sudo fallocate -l 8G /swapfile
-          sudo chmod 600 /swapfile
-          sudo mkswap /swapfile
-          sudo swapon /swapfile
-          free -h
-
       - name: Checkout kernel source
         uses: actions/checkout@v6
         with:
