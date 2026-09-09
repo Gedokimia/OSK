@@ -44,10 +44,10 @@ static const struct snd_pcm_hardware mt6768_afe_hardware = {
 		    SNDRV_PCM_FMTBIT_S24_LE |
 		    SNDRV_PCM_FMTBIT_S32_LE),
 	.period_bytes_min = 256,
-	.period_bytes_max = 4 * 48 * 1024,
+	.period_bytes_max = 16 * 48 * 1024,
 	.periods_min = 2,
 	.periods_max = 256,
-	.buffer_bytes_max = 8 * 48 * 1024,
+	.buffer_bytes_max = 16 * 48 * 1024,
 	.fifo_size = 0,
 };
 
