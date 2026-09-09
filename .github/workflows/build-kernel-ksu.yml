@@ -1,0 +1,163 @@
+name: Build Kernel (Clang + KernelSU)
+
+on:
+  workflow_dispatch:
+    inputs:
+      kernel_repo:
+        description: 'owner/repo kernel source'
+        required: true
+        default: 'JeanneDarc-star/OSK'
+      kernel_branch:
+        description: 'Branch kernel yang mau di-build'
+        required: true
+        default: 'Sarkazz-OC'
+      defconfig:
+        description: 'Nama defconfig (relatif ke arch/<ARCH>/configs/)'
+        required: true
+        default: 'earth_defconfig'
+      ksu_ref:
+        description: 'Arg ke KernelSU (backslashxx fork) setup.sh, kosong = default branch'
+        required: false
+        default: ''
+      arch:
+        description: 'Target arch'
+        required: true
+        default: 'arm64'
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    env:
+      KDIR: kernel_src
+      ARCH: ${{ github.event.inputs.arch }}
+      CLANG_URL: https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/c66f8b376703f420d791cf01547d076649651aa8/clang-r614150.tar.gz
+      ANYKERNEL_REPO: https://github.com/JeanneDarc-star/AnyKernel3.git
+      KSU_SETUP_URL: https://github.com/backslashxx/KernelSU/raw/refs/heads/master/kernel/setup.sh
+    steps:
+      - name: Free disk space
+        run: |
+          rm -rf "${KDIR}" clang AnyKernel3 artifacts 2>/dev/null || true
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc \
+            /opt/hostedtoolcache/CodeQL /usr/local/share/boost || true
+          sudo docker image prune --all --force || true
+          df -h /
+
+      - name: Checkout kernel source
+        uses: actions/checkout@v6
+        with:
+          repository: ${{ github.event.inputs.kernel_repo }}
+          ref: ${{ github.event.inputs.kernel_branch }}
+          path: ${{ env.KDIR }}
+          fetch-depth: 1
+
+      - name: Validasi kernel version = 4.19
+        working-directory: ${{ env.KDIR }}
+        run: |
+          V=$(grep -m1 '^VERSION = ' Makefile | awk '{print $3}')
+          P=$(grep -m1 '^PATCHLEVEL = ' Makefile | awk '{print $3}')
+          echo "Detected kernel version: ${V}.${P}"
+          if [ "$V" != "4" ] || [ "$P" != "19" ]; then
+            echo "::error::Workflow ini cuma support kernel 4.19, source ini ${V}.${P}"
+            exit 1
+          fi
+
+      - name: Install build deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y bc bison flex cpio libssl-dev \
+            libelf-dev dwarves zstd lz4 python3 git curl zip \
+            gcc-aarch64-linux-gnu gcc-arm-linux-gnueabihf
+          sudo apt-get clean
+          sudo rm -rf /var/lib/apt/lists/*
+
+      - name: Fetch clang toolchain
+        run: |
+          mkdir -p clang
+          curl -Ls "$CLANG_URL" | tar -C clang -xzf -
+          echo "$GITHUB_WORKSPACE/clang/bin" >> "$GITHUB_PATH"
+
+      - name: Verify toolchain
+        run: |
+          clang --version
+          ld.lld --version
+
+      - name: Integrate KernelSU
+        working-directory: ${{ env.KDIR }}
+        run: |
+          curl -LSs "$KSU_SETUP_URL" | bash -s ${{ github.event.inputs.ksu_ref }}
+          test -d drivers/kernelsu || { echo "KSU inject gagal, drivers/kernelsu tidak ada"; exit 1; }
+
+      - name: Enable ThinLTO
+        working-directory: ${{ env.KDIR }}
+        run: |
+          CFG="arch/${ARCH}/configs/${{ github.event.inputs.defconfig }}"
+          test -f "$CFG" || { echo "defconfig tidak ditemukan: $CFG"; exit 1; }
+          sed -i '/CONFIG_LTO_CLANG_THIN/d;/CONFIG_LTO_CLANG_FULL/d;/^CONFIG_LTO_CLANG=/d;/^# CONFIG_LTO_CLANG is not set/d' "$CFG"
+          printf '%s\n' \
+            'CONFIG_LTO_CLANG=y' \
+            'CONFIG_LTO_CLANG_THIN=y' \
+            '# CONFIG_LTO_CLANG_FULL is not set' >> "$CFG"
+
+      - name: Build kernel
+        working-directory: ${{ env.KDIR }}
+        env:
+          DEFCONFIG: ${{ github.event.inputs.defconfig }}
+        run: |
+          MAKE_ARGS="LLVM=1 LD=ld.lld AR=llvm-ar AS=llvm-as NM=llvm-nm \
+            OBJDUMP=llvm-objdump STRIP=llvm-strip CC=clang \
+            CLANG_TRIPLE=aarch64-linux-gnu- \
+            CROSS_COMPILE=aarch64-linux-gnu- \
+            CROSS_COMPILE_ARM32=arm-linux-gnueabihf- \
+            CONFIG_NO_ERROR_ON_MISMATCH=y CONFIG_DEBUG_SECTION_MISMATCH=y"
+          KCFLAGS="-O3 -Wno-error"
+
+          rm -f out/arch/"$ARCH"/boot/Image.gz-dtb
+          make O=out ARCH="$ARCH" "$DEFCONFIG"
+
+          set +e
+          make -j"$(nproc)" O=out ARCH="$ARCH" $MAKE_ARGS KCFLAGS="$KCFLAGS" V=0 > out/build.log 2>&1
+          RC=$?
+          set -e
+          tail -n 300 out/build.log
+          if [ $RC -ne 0 ]; then
+            echo "::error::Build gagal (exit $RC). Full log ada di artifact out/build.log"
+            exit $RC
+          fi
+
+      - name: Package with AnyKernel3
+        run: |
+          mkdir -p artifacts
+          git clone --depth=1 "$ANYKERNEL_REPO" AnyKernel3
+          BOOT_DIR="${KDIR}/out/arch/${ARCH}/boot"
+          if [ -f "${BOOT_DIR}/Image.gz-dtb" ]; then
+            cp "${BOOT_DIR}/Image.gz-dtb" AnyKernel3/
+          elif [ -f "${BOOT_DIR}/Image.gz" ]; then
+            cp "${BOOT_DIR}/Image.gz" AnyKernel3/
+          else
+            echo "::error::Image.gz-dtb / Image.gz tidak ada di ${BOOT_DIR}, build gagal"
+            exit 1
+          fi
+          cd AnyKernel3
+          zip -r9 "../artifacts/AK3-Prima-ExT4.zip" . -x '.git*'
+
+      - name: Upload kernel zip
+        uses: actions/upload-artifact@v6
+        with:
+          name: AK3-Prima-ExT4
+          path: artifacts/AK3-Prima-ExT4.zip
+          retention-days: 14
+
+      - name: Upload build log
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: build-log
+          path: ${{ env.KDIR }}/out/build.log
+          retention-days: 14
+          if-no-files-found: warn
+
+      - name: Cleanup workspace
+        if: always()
+        run: |
+          rm -rf "${KDIR}" clang AnyKernel3
+          df -h /

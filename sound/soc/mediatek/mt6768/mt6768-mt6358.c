@@ -304,10 +304,10 @@ static const struct snd_pcm_hardware mt6768_mt6358_vow_hardware = {
 	.info = (SNDRV_PCM_INFO_MMAP | SNDRV_PCM_INFO_INTERLEAVED |
 		 SNDRV_PCM_INFO_MMAP_VALID),
 	.period_bytes_min = 256,
-	.period_bytes_max = 2 * 1024,
+	.period_bytes_max = 2 * 2048,
 	.periods_min = 2,
 	.periods_max = 4,
-	.buffer_bytes_max = 2 * 2 * 1024,
+	.buffer_bytes_max = 2 * 2 * 2048,
 };
 
 static int mt6768_mt6358_vow_startup(struct snd_pcm_substream *substream)
