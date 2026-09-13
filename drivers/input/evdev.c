@@ -151,6 +151,8 @@ static void __evdev_queue_syn_dropped(struct evdev_client *client)
 	ktime_t *ev_time = input_get_timestamp(client->evdev->handle.dev);
 	struct timespec64 ts = ktime_to_timespec64(ev_time[client->clk_type]);
 	struct input_event ev;
+	ktime_t time;
+
 	time = client->clk_type == EV_CLK_REAL ?
 			ktime_get_real() :
 			client->clk_type == EV_CLK_MONO ?
