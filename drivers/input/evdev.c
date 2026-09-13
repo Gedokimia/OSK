@@ -153,9 +153,9 @@ static void __evdev_queue_syn_dropped(struct evdev_client *client)
 	struct input_event ev;
 	ktime_t time;
 
-	time = client->clk_type == EV_CLK_REAL ?
+	time = client->clk_type == INPUT_CLK_REAL ?
 			ktime_get_real() :
-			client->clk_type == EV_CLK_MONO ?
+			client->clk_type == INPUT_CLK_MONO ?
 				ktime_get() :
 				ktime_get_boottime();
 
