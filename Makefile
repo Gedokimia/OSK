@@ -713,7 +713,7 @@ KBUILD_CFLAGS += $(call cc-option,-mllvm -hot-cold-split=true)
 KBUILD_CFLAGS   += $(call cc-option,-mllvm -enable-ml-inliner=default)
 
 # Additional Performance & Size Optimizations
-KBUILD_CFLAGS   += $(call cc-option,-fomit-frame-pointer
+KBUILD_CFLAGS   += $(call cc-option,-fomit-frame-pointer)
 KBUILD_CFLAGS   += $(call cc-option,-mllvm -force-vector-interleave=2)
 KBUILD_CFLAGS   += $(call cc-option,-mllvm -unroll-threshold=150)
 KBUILD_CFLAGS   += $(call cc-option,-mllvm -inline-threshold=300)
