@@ -700,9 +700,23 @@ KBUILD_CFLAGS += $(call cc-option,-ffp-contract=fast)
 # (memcpy, crypto) use their own unrolled assembly regardless of this.
 KBUILD_CFLAGS += $(call cc-option,-fno-unroll-loops)
 
+# CPU Target: Cortex-A75 (big) + Cortex-A55 (LITTLE)
+KBUILD_CFLAGS   += $(call cc-option,-mcpu=cortex-a75)
+KBUILD_CFLAGS   += $(call cc-option,-mtune=cortex-a75.cortex-a55)
+
+# Machine / Target flags for AArch64
+KBUILD_CFLAGS   += $(call cc-option,-march=armv8.2-a+crypto+fp16+dotprod)
 # Enable hot cold split optimization
 KBUILD_CFLAGS += $(call cc-option,-mllvm -hot-cold-split=true)
 
+# Inlining Advisor (optional, supported in LLVM 13+)
+KBUILD_CFLAGS   += $(call cc-option,-mllvm -enable-ml-inliner=default)
+
+# Additional Performance & Size Optimizations
+KBUILD_CFLAGS   += $(call cc-option,-fomit-frame-pointer
+KBUILD_CFLAGS   += $(call cc-option,-mllvm -force-vector-interleave=2)
+KBUILD_CFLAGS   += $(call cc-option,-mllvm -unroll-threshold=150)
+KBUILD_CFLAGS   += $(call cc-option,-mllvm -inline-threshold=300)
 # OSK: enable linker-level deduplication of identical code.
 # --icf=safe (Identical Code Folding, safe mode) merges functions with
 # identical bodies that are provably interchangeable. This reduces .text
