@@ -589,6 +589,11 @@ ssize_t ksys_read(unsigned int fd, char __user *buf, size_t count)
 
 SYSCALL_DEFINE3(read, unsigned int, fd, char __user *, buf, size_t, count)
 {
+
+#ifdef CONFIG_KSU_MANUAL_HOOK
+	if (static_branch_unlikely(&ksu_init_rc_hook_key_false)) 
+		ksu_handle_sys_read(fd, &buf, &count);
+#endif
 	return ksys_read(fd, buf, count);
 }
 
