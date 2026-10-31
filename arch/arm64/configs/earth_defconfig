@@ -1,6 +1,6 @@
 #C3T code for HQ-219004 by wangjian at 2022/08/11 start 
-CONFIG_LOCALVERSION="-Prima-ExT4"
-# CONFIG_LOCALVERSION_AUTO is not set
+# CONFIG_LOCALVERSION="-Prima-ExT4"
+CONFIG_LOCALVERSION_AUTO=y
 #C3T code for HQ-219004 by wangjian at 2022/08/11 end 
 CONFIG_PREEMPT=y
 CONFIG_IKHEADERS=n
@@ -702,7 +702,7 @@ CONFIG_TMPFS_XATTR=y
 # LTO (ThinLTO only -- CONFIG_LTO_CLANG_FULL is not a valid symbol in
 # this Kconfig scheme, arch/Kconfig only exposes THINLTO as a toggle
 # under LTO_CLANG; leaving THINLTO=y is what keeps this off full LTO)
-CONFIG_LTO=y
+CONFIG_THINLTO=y
 CONFIG_ARCH_SUPPORTS_LTO_CLANG=y
 CONFIG_LTO_CLANG=y
 # CONFIG_LTO_NONE is not set
@@ -711,16 +711,16 @@ CONFIG_THINLTO=y
 # CFI
 CONFIG_CFI_CLANG=n
 CONFIG_SHADOW_CALL_STACK=n
-CONFIG_KSU=y
-CONFIG_KSU_SUSFS=y
+#CONFIG_KSU=y
+#CONFIG_KSU_SUSFS=y
 # CONFIG_KSU_TAMPER_SYSCALL_TABLE=y
-CONFIG_KSU_HACK_ARM64_BRANCH_LINK=y
+#CONFIG_KSU_HACK_ARM64_BRANCH_LINK=y
 # NoMount
-CONFIG_NOMOUNT=y
+#CONFIG_NOMOUNT=y
 # LLVM Polly -- disabled: AOSP prebuilt clang r596125 is not
 # guaranteed to ship polly; -mllvm -polly is gated by cc-option at
 # the flag level but the polly passes themselves are not, so leave off
-# CONFIG_LLVM_POLLY is not set
+CONFIG_LLVM_POLLY=y
 # TCP Congestion
 CONFIG_TCP_CONG_ADVANCED=y
 CONFIG_TCP_CONG_BBRPLUS=y
