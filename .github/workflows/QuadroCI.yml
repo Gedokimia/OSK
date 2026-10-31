@@ -1,14 +1,16 @@
 name: Quadro CI
 
-on:
-  push:
-    branches: [Sarkazz-OC]          
+on:          
   workflow_dispatch:
     inputs:
       defconfig:
         description: "Defconfig"
         required: true
         default: "earth_defconfig"
+        ref:
+        description: "Branch/tag/commit source kernel"
+        required: true
+        default: "Sarkazz-OC"
 
 env:
   ARCH: arm64
