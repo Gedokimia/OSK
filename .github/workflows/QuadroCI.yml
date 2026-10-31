@@ -7,7 +7,7 @@ on:
     inputs:
       defconfig:
         description: "Defconfig"
-        required: trus
+        required: true
         default: "earth_defconfig"
 
 env:
