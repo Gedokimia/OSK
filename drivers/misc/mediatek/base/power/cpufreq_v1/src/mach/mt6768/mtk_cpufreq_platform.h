@@ -39,13 +39,13 @@
 #define MIN_VPROC_VOLT			60000
 #define MAX_VPROC_VOLT			112000
 
-#define UP_SRATE	1000
-#define DOWN_SRATE	750
-#define PMIC_CMD_DELAY_TIME	5
-#define MIN_PMIC_SETTLE_TIME	5
+#define UP_SRATE	1500
+#define DOWN_SRATE	1000
+#define PMIC_CMD_DELAY_TIME	8
+#define MIN_PMIC_SETTLE_TIME	10
 
-#define PLL_SETTLE_TIME		20
-#define POS_SETTLE_TIME		1
+#define PLL_SETTLE_TIME		40
+#define POS_SETTLE_TIME		2
 
 #define DVFSP_DT_NODE		"mediatek,mt6768-dvfsp"
 

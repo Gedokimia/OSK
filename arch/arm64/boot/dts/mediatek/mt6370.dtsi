@@ -33,7 +33,7 @@
 			bootmode = <&chosen>;
 			charger_name = "primary_chg";
 			load_switch_name = "primary_load_switch";
-			ichg = <2000000>;	/* uA */
+			ichg = <3000000>;	/* uA */
 			aicr = <500000>;	/* uA */
 			mivr = <4400000>;	/* uV */
 			cv = <4350000>;		/* uA */
