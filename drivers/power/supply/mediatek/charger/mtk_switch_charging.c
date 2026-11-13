@@ -152,23 +152,12 @@ static void swchg_select_charging_current_limit(struct charger_manager *info)
 	mutex_lock(&swchgalg->ichg_aicr_access_mutex);
 
 	/* AICL */
-	if (!mtk_pe20_get_is_connect(info) && !mtk_pe_get_is_connect(info) &&
-	    !mtk_is_TA_support_pd_pps(info) && !mtk_pdc_check_charger(info)) {
-		charger_dev_run_aicl(info->chg1_dev,
-				&pdata->input_current_limit_by_aicl);
-		if (info->enable_dynamic_mivr) {
-			if (pdata->input_current_limit_by_aicl >
-				info->data.max_dmivr_charger_current)
-				pdata->input_current_limit_by_aicl =
-					info->data.max_dmivr_charger_current;
-		}
-	}
 
 	if (pdata->force_charging_current > 0) {
 
 		pdata->charging_current_limit = pdata->force_charging_current;
-		if (pdata->force_charging_current <= 450000) {
-			pdata->input_current_limit = 500000;
+		if (pdata->force_charging_current <= 3500000) {
+			pdata->input_current_limit = 3500000;
 		} else {
 			pdata->input_current_limit =
 					info->data.ac_charger_input_current;
@@ -351,14 +340,6 @@ static void swchg_select_charging_current_limit(struct charger_manager *info)
 				info->pe4.pe4_input_current_limit_setting;
 	}
 
-	if (pdata->input_current_limit_by_aicl != -1 &&
-	    !mtk_pe20_get_is_connect(info) && !mtk_pe_get_is_connect(info) &&
-	    !mtk_is_TA_support_pd_pps(info)) {
-		if (pdata->input_current_limit_by_aicl <
-		    pdata->input_current_limit)
-			pdata->input_current_limit =
-					pdata->input_current_limit_by_aicl;
-	}
 done:
 	ret = charger_dev_get_min_charging_current(info->chg1_dev, &ichg1_min);
 	if (ret != -ENOTSUPP && pdata->charging_current_limit < ichg1_min)

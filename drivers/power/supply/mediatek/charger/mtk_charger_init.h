@@ -24,19 +24,19 @@
  * and within the JEITA T2→T3 CC cap, so it cannot exceed what the
  * charging IC and JEITA policy already allow.
  */
-#define AC_CHARGER_CURRENT			2200000
-#define AC_CHARGER_INPUT_CURRENT		3200000
+#define AC_CHARGER_CURRENT			3000000
+#define AC_CHARGER_INPUT_CURRENT		3000000
 #define NON_STD_AC_CHARGER_CURRENT		500000
 #define CHARGING_HOST_CHARGER_CURRENT		650000
 #define APPLE_1_0A_CHARGER_CURRENT		650000
 #define APPLE_2_1A_CHARGER_CURRENT		800000
 #define TA_AC_CHARGING_CURRENT	3000000
-#define USB_UNLIMITED_CURRENT	2000000
+#define USB_UNLIMITED_CURRENT	3000000
 
 /* dynamic mivr */
 #define V_CHARGER_MIN_1 4400000 /* 4.4 V */
 #define V_CHARGER_MIN_2 4200000 /* 4.2 V */
-#define MAX_DMIVR_CHARGER_CURRENT 1400000 /* 1.4 A */
+#define MAX_DMIVR_CHARGER_CURRENT 3000000 /* 1.4 A */
 
 /* C3T code for HQ-219166 by tongjiacheng at 2022/08/12 start */
 /* sw jeita */
@@ -51,7 +51,7 @@
  * At high temperatures JEITA requires reduced current to
  * protect battery longevity. 2000mA (0.5C) is appropriate.
  */
-#define JEITA_TEMP_T3_TO_T4_CC	2000000
+#define JEITA_TEMP_T3_TO_T4_CC	3000000
 /*
  * OSK: T2→T3 CC (15-45°C normal range): 2000→2200mA.
  * +10% over the previous limit. JEITA classifies 15-45°C as the
@@ -61,7 +61,7 @@
  * versus 2000mA. Actual current is still bounded by AC_CHARGER_CURRENT
  * and the battery's own charge-current-limit register via fuel gauge.
  */
-#define JEITA_TEMP_T2_TO_T3_CC	2200000
+#define JEITA_TEMP_T2_TO_T3_CC	3200000
 /*
  * OSK: T1→T2 CC (10-15°C cool range): 1470→1600mA.
  * Modest +9% increase for the cool range. The BTS thermistor +

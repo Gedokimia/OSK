@@ -141,8 +141,8 @@ struct mt6370_pmu_charger_data {
 
 /* These default values will be used if there's no property in dts */
 static struct mt6370_pmu_charger_desc mt6370_default_chg_desc = {
-	.ichg = 2000000,		/* uA */
-	.aicr = 500000,			/* uA */
+	.ichg = 4000000,		/* uA */
+	.aicr = 4000000,			/* uA */
 	.mivr = 4400000,		/* uV */
 	.cv = 4350000,			/* uA */
 	.ieoc = 250000,			/* uA */
@@ -158,7 +158,7 @@ static struct mt6370_pmu_charger_desc mt6370_default_chg_desc = {
 	.en_te = true,
 	.en_wdt = true,
 	.en_polling = false,
-	.post_aicl = true,
+	.post_aicl = false,
 	.chg_dev_name = "primary_chg",
 	.ls_dev_name = "primary_load_switch",
 };
